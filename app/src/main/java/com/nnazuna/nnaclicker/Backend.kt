@@ -16,6 +16,8 @@ interface InputBackend {
     fun stopPlay()
     fun playLoop(): Int
     fun lastError(): String
+    /** Full-resolution PNG of the screen. */
+    fun snap(): ByteArray?
     fun close()
 }
 
@@ -49,6 +51,18 @@ class BinderBackend(private val s: IInputService) : InputBackend {
             off += chunk
         }
         return s.play(loops, speed, intervalMs, startDelayMs, jitterPx, jitterPct)
+    }
+
+    override fun snap(): ByteArray? {
+        val len = s.snap()
+        if (len <= 0) return null
+        val sb = StringBuilder(len)
+        var off = 0
+        while (off < len) {
+            sb.append(s.readResult(off, chunk))
+            off += chunk
+        }
+        return android.util.Base64.decode(sb.toString(), android.util.Base64.NO_WRAP)
     }
 
     override fun stopPlay() = s.stopPlay()
@@ -134,6 +148,9 @@ class ProcessBackend private constructor(private val proc: Process) : InputBacke
             call("PLAY $loops $speed $intervalMs $startDelayMs $jitterPx $jitterPct", r.toJson().toString(), 15000)
             true
         }
+    override fun snap(): ByteArray? = guard(null) {
+        android.util.Base64.decode(call("SNAP", timeoutMs = 15000), android.util.Base64.NO_WRAP)
+    }
     override fun stopPlay() { guard(Unit) { call("STOP"); Unit } }
     override fun playLoop() = guard(-1) { call("LOOP").toInt() }
     override fun lastError(): String {

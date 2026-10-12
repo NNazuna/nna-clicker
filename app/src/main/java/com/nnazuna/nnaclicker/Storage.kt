@@ -25,6 +25,29 @@ class Storage(context: Context) {
         File(dir, "${r.id}.json").writeText(r.toJson().toString())
     }
 
+    // ---------- screenshots for image steps ----------
+
+    private val snapDir = File(context.filesDir, "snaps").apply { mkdirs() }
+
+    fun snapFile(name: String?): File? = name?.let { File(snapDir, it) }?.takeIf { it.exists() }
+
+    /** Save a PNG screenshot and return its file name. Keeps the newest ones plus any still in use. */
+    fun saveSnap(png: ByteArray): String {
+        val name = "snap-" + System.currentTimeMillis() + ".png"
+        File(snapDir, name).writeBytes(png)
+        pruneSnaps()
+        return name
+    }
+
+    /** Newest first. */
+    fun snaps(): List<File> =
+        (snapDir.listFiles { f -> f.name.endsWith(".png") } ?: emptyArray()).sortedByDescending { it.lastModified() }
+
+    private fun pruneSnaps() {
+        val used = list().flatMap { r -> r.images.mapNotNull { it.snap } }.toSet()
+        snaps().drop(12).filter { it.name !in used }.forEach { it.delete() }
+    }
+
     fun delete(id: String) {
         File(dir, "$id.json").delete()
         if (selectedId == id) selectedId = null

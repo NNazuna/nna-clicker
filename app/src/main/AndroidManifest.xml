@@ -21,6 +21,10 @@
             android:name=".EditorActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".ImageStepActivity"
+            android:exported="false" />
+
         <!-- Required by Shizuku to deliver its binder -->
         <provider
             android:name="rikka.shizuku.ShizukuProvider"

@@ -3,6 +3,20 @@
 All notable changes to NNA Clicker are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-10-13
+
+### Added
+- Image steps: wait for an image to appear, tap it wherever it is, or wait until it disappears.
+- Camera button on the floating panel. While recording, it marks "wait for this screen" at that moment; otherwise it saves a screenshot to use later.
+- Crop screen to choose the area to look for, with options for action, search area, time limit, what to do if not found, and match strictness.
+- "Add image step" in the step editor, using any saved screenshot.
+- Fast on-device matching: grayscale normalized cross-correlation over an image pyramid with a color check, no external libraries.
+- Screen capture through Shizuku (`screencap`) or, without Shizuku, the accessibility screenshot API on Android 11 and later.
+
+### Changed
+- The step editor shows touch steps and image steps on one timeline.
+- When a recording has image steps, the dim overlay is limited to 60% so the screen can still be read.
+
 ## [1.0.0] - 2026-10-12
 
 Initial release.

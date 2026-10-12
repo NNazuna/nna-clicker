@@ -18,4 +18,7 @@ interface IInputService {
     int playLoop() = 10;
 
     String lastError() = 11;
+
+    // Full-resolution PNG of the screen, base64; read it with readResult(). Returns its length.
+    int snap() = 12;
 }

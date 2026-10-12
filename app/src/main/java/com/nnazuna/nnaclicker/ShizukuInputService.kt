@@ -41,6 +41,12 @@ class ShizukuInputService() : IInputService.Stub() {
         jitterPx: Float, jitterPct: Float,
     ): Boolean = engine.play(upload.toString(), loops, speed, intervalMs, startDelayMs, jitterPx, jitterPct)
 
+    override fun snap(): Int {
+        val png = engine.snapPng() ?: return 0
+        result = android.util.Base64.encodeToString(png, android.util.Base64.NO_WRAP)
+        return result.length
+    }
+
     override fun stopPlay() = engine.stopPlay()
     override fun playLoop(): Int = engine.playLoop()
     override fun lastError(): String = engine.lastError()

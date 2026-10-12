@@ -215,7 +215,8 @@ class InputEngine {
         }
         lastErr = ""
         injectFailed = false
-        if (rec.gestures.isEmpty() || injector == null) return false
+        val steps = rec.steps().filter { it !is ImageStep || it.ready }
+        if (steps.isEmpty() || injector == null) return false
         val sp = speed.coerceIn(0.1f, 10f)
         playing = true
         currentLoop = 1
@@ -228,19 +229,32 @@ class InputEngine {
                     currentLoop = loop
                     var prevEnd = -1L
                     var wallEnd = SystemClock.uptimeMillis()
-                    for (g in rec.gestures) {
+                    for ((i, st) in steps.withIndex()) {
                         if (!playing) break
                         if (prevEnd >= 0) {
-                            var gap = (g.at - prevEnd).coerceAtLeast(0L).toDouble()
+                            var gap = (st.at - prevEnd).coerceAtLeast(0L).toDouble()
                             if (jitterPct > 0) gap *= 1 + (rnd.nextDouble() * 2 - 1) * jitterPct / 100.0
                             sleepUntil(wallEnd + (gap / sp).toLong())
                         }
-                        val gg = if (jitterPx > 0) g.shifted(
-                            ((rnd.nextDouble() * 2 - 1) * jitterPx).toFloat(),
-                            ((rnd.nextDouble() * 2 - 1) * jitterPx).toFloat(),
-                        ) else g
-                        wallEnd = inject(gg, sp)
-                        prevEnd = g.at + g.duration
+                        if (!playing) break
+                        when (st) {
+                            is RecGesture -> {
+                                val gg = if (jitterPx > 0) st.shifted(
+                                    ((rnd.nextDouble() * 2 - 1) * jitterPx).toFloat(),
+                                    ((rnd.nextDouble() * 2 - 1) * jitterPx).toFloat(),
+                                ) else st
+                                wallEnd = inject(gg, sp)
+                            }
+                            is ImageStep -> {
+                                val ok = waitImage(st, rec.dim, jitterPx, rnd)
+                                if (!ok && playing && st.onTimeout == ImageStep.ON_TIMEOUT_STOP) {
+                                    lastErr = "Image not found at step ${i + 1}. Playback stopped."
+                                    playing = false
+                                }
+                                wallEnd = SystemClock.uptimeMillis()
+                            }
+                        }
+                        prevEnd = st.at + st.duration
                     }
                     loop++
                     if (playing && (loops == 0 || loop <= loops)) sleepFor(intervalMs)
@@ -254,6 +268,35 @@ class InputEngine {
         }
         return true
     }
+
+    /**
+     * Look for [st] on screen until it appears (or disappears), then run its action.
+     * Returns false on timeout.
+     */
+    private fun waitImage(st: ImageStep, dim: Float, jitterPx: Float, rnd: Random): Boolean {
+        val deadline = SystemClock.uptimeMillis() + st.timeoutMs
+        while (playing) {
+            val frame = ShellCapture.grab()
+            if (frame != null) {
+                val m = ImageMatcher.find(frame, st, dim)
+                when (st.action) {
+                    ImageStep.ACTION_GONE -> if (m == null) return true
+                    ImageStep.ACTION_TAP -> if (m != null) {
+                        val j = { if (jitterPx > 0) ((rnd.nextDouble() * 2 - 1) * minOf(jitterPx, st.w / 4f)).toFloat() else 0f }
+                        inject(RecGesture.tap(m.x + j(), m.y + j()), 1f)
+                        return true
+                    }
+                    else -> if (m != null) return true
+                }
+            }
+            if (SystemClock.uptimeMillis() >= deadline) return false
+            sleepFor(60)
+        }
+        return false
+    }
+
+    /** Full-resolution PNG of the current screen. */
+    fun snapPng(): ByteArray? = ShellCapture.png()
 
     private fun sleepFor(ms: Long) = sleepUntil(SystemClock.uptimeMillis() + ms)
 

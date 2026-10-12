@@ -59,6 +59,7 @@ class RecorderService : AccessibilityService() {
     private var panelParams: WindowManager.LayoutParams? = null
     private lateinit var btnRecord: ImageView
     private lateinit var btnPlay: ImageView
+    private lateinit var btnSnap: ImageView
     private lateinit var btnApp: ImageView
     private lateinit var btnClose: ImageView
     private lateinit var statusBox: LinearLayout
@@ -74,6 +75,9 @@ class RecorderService : AccessibilityService() {
     private var captureParams: WindowManager.LayoutParams? = null
     private var recordStart = 0L
     private val recorded = mutableListOf<RecGesture>()
+    /** Image steps marked with the camera button while recording (cropped later in the editor). */
+    private val recordedImages = mutableListOf<ImageStep>()
+    private var snapping = false
     /** Mode rekam/putar yang sedang berjalan memakai Shizuku. */
     private var shizukuActive = false
 
@@ -227,6 +231,8 @@ class RecorderService : AccessibilityService() {
 
         btnRecord = iconButton { onRecordPressed() }
         btnPlay = iconButton { onPlayPressed() }
+        btnSnap = iconButton { snap() }
+        btnSnap.setImageDrawable(IconDrawable(Icon.CAMERA, 0xE6FFFFFF.toInt(), dp(22f)))
 
         // Status: titik merah berdenyut saat merekam + angka waktu/ulangan.
         statusBox = LinearLayout(this).apply {
@@ -323,6 +329,7 @@ class RecorderService : AccessibilityService() {
             State.IDLE -> {
                 setIcon(btnRecord, Icon.RECORD, COLOR_REC); btnRecord.visibility = View.VISIBLE
                 setIcon(btnPlay, Icon.PLAY, COLOR_PLAY); btnPlay.visibility = View.VISIBLE
+                btnSnap.visibility = View.VISIBLE
                 btnApp.visibility = View.VISIBLE
                 btnClose.visibility = View.VISIBLE
                 statusBox.visibility = View.GONE
@@ -330,6 +337,7 @@ class RecorderService : AccessibilityService() {
             State.RECORDING -> {
                 setIcon(btnRecord, Icon.STOP, 0xFFFFFFFF.toInt()); btnRecord.visibility = View.VISIBLE
                 btnPlay.visibility = View.GONE
+                btnSnap.visibility = View.VISIBLE
                 btnApp.visibility = View.GONE
                 btnClose.visibility = View.GONE
                 statusBox.visibility = View.VISIBLE
@@ -343,6 +351,7 @@ class RecorderService : AccessibilityService() {
             }
             State.PLAYING -> {
                 btnRecord.visibility = View.GONE
+                btnSnap.visibility = View.GONE
                 setIcon(btnPlay, Icon.STOP, 0xFFFFFFFF.toInt()); btnPlay.visibility = View.VISIBLE
                 btnApp.visibility = View.GONE
                 btnClose.visibility = View.GONE
@@ -378,6 +387,7 @@ class RecorderService : AccessibilityService() {
 
     private fun startRecording() {
         recorded.clear()
+        recordedImages.clear()
         recordStart = SystemClock.uptimeMillis()
         shizukuActive = false
 
@@ -474,16 +484,18 @@ class RecorderService : AccessibilityService() {
             recorded.toMutableList()
         }
         recorded.clear()
+        val images = recordedImages.toMutableList()
+        recordedImages.clear()
 
-        if (gestures.isEmpty()) {
+        if (gestures.isEmpty() && images.isEmpty()) {
             toast("Nothing recorded")
             return
         }
         val name = "Recording " + SimpleDateFormat("MMM d, HH:mm:ss", Locale.US).format(Date())
-        val rec = Recording(UUID.randomUUID().toString(), name, System.currentTimeMillis(), gestures)
+        val rec = Recording(UUID.randomUUID().toString(), name, System.currentTimeMillis(), gestures, images)
         storage.save(rec)
         storage.selectedId = rec.id
-        toast("Saved: $name")
+        toast(if (images.isEmpty()) "Saved: $name" else "Saved: $name. Open the editor to choose the image areas.")
         onChanged?.invoke()
     }
 
@@ -491,10 +503,13 @@ class RecorderService : AccessibilityService() {
 
     private fun startPlaying() {
         val rec = storage.selected()
-        if (rec == null || rec.gestures.isEmpty()) {
+        if (rec == null || (rec.gestures.isEmpty() && !rec.hasImages)) {
             toast("No recording selected")
             return
         }
+        if (rec.images.any { !it.ready }) toast("Some image steps have no area yet and will be skipped")
+        // Image matching corrects for the dim layer; keep it light enough to still see details.
+        rec.dim = if (storage.dimScreen) dimFraction(rec) else 0f
         val loops = storage.loops
         state = State.PLAYING
         updatePanel()
@@ -534,7 +549,10 @@ class RecorderService : AccessibilityService() {
             jitterPx = storage.jitterPx,
             jitterPct = storage.jitterPct,
             onLoop = { n -> status.text = loopText(n, loops) },
-            onFinish = { finishPlaying() },
+            onFinish = { err ->
+                if (err != null) toast(err)
+                finishPlaying()
+            },
         ).also { it.start() }
     }
 
@@ -570,7 +588,7 @@ class RecorderService : AccessibilityService() {
         )
         val v = View(this)
         if (storage.dimScreen) {
-            val a = (storage.dimLevel * 255 / 100).coerceIn(0, 255)
+            val a = (dimFraction(storage.selected()) * 255).toInt().coerceIn(0, 255)
             v.setBackgroundColor(a shl 24)
             params.screenBrightness = 0.01f
         } else {
@@ -581,6 +599,75 @@ class RecorderService : AccessibilityService() {
             dimView = v
             bringPanelToFront()
         } catch (_: Exception) {}
+    }
+
+    private fun dimFraction(rec: Recording?): Float {
+        val level = storage.dimLevel / 100f
+        return if (rec?.hasImages == true) minOf(level, 0.6f) else level
+    }
+
+    // ---------- screenshots ----------
+
+    /**
+     * Camera button. While recording: mark "wait for this screen" at this moment.
+     * Otherwise: save a screenshot to use for an image step later.
+     */
+    private fun snap() {
+        if (snapping) return
+        snapping = true
+        val at = SystemClock.uptimeMillis() - recordStart
+        val recording = state == State.RECORDING
+        val size = screenSize()
+        // Hide our own overlays so they don't end up in the template.
+        panel?.visibility = View.INVISIBLE
+        capture?.visibility = View.INVISIBLE
+        handler.postDelayed({
+            captureScreen { png ->
+                handler.post {
+                    panel?.visibility = View.VISIBLE
+                    capture?.visibility = View.VISIBLE
+                    snapping = false
+                    if (png == null) {
+                        toast(
+                            if (Build.VERSION.SDK_INT < 30 && !useShizukuNow()) "Screenshots need Android 11 or later, or Shizuku"
+                            else "Couldn't take a screenshot. Try again."
+                        )
+                        return@post
+                    }
+                    val name = storage.saveSnap(png)
+                    if (recording && state == State.RECORDING) {
+                        recordedImages.add(ImageStep(at, name, screenW = size.x, screenH = size.y))
+                        toast("Image step added")
+                    } else {
+                        toast("Screenshot saved. Use it in the editor with Add image step.")
+                    }
+                }
+            }
+        }, 150)
+    }
+
+    /** PNG of the screen through Shizuku when connected, otherwise the accessibility screenshot. */
+    private fun captureScreen(cb: (ByteArray?) -> Unit) {
+        val backend = if (useShizukuNow()) ShizukuBridge.backend else null
+        if (backend != null) {
+            Thread {
+                val png = try { backend.snap() } catch (e: Exception) { null }
+                if (png != null || Build.VERSION.SDK_INT < 30) cb(png) else a11yPng(cb)
+            }.start()
+        } else if (Build.VERSION.SDK_INT >= 30) {
+            a11yPng(cb)
+        } else cb(null)
+    }
+
+    private fun a11yPng(cb: (ByteArray?) -> Unit) {
+        if (Build.VERSION.SDK_INT < 30) { cb(null); return }
+        A11yCapture.bitmap(this) { bmp ->
+            if (bmp == null) { cb(null); return@bitmap }
+            val out = java.io.ByteArrayOutputStream()
+            bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+            bmp.recycle()
+            cb(out.toByteArray())
+        }
     }
 
     private fun hideDim() {

@@ -269,7 +269,7 @@ class Kit(private val a: Activity) {
     }
 }
 
-enum class Icon { RECORD, STOP, PLAY, LIST, CLOSE, GRIP, MORE, BACK }
+enum class Icon { RECORD, STOP, PLAY, LIST, CLOSE, GRIP, MORE, BACK, CAMERA, IMAGE }
 
 /** Ikon digambar langsung di canvas supaya tajam & konsisten di semua ROM (tanpa emoji). */
 class IconDrawable(private val kind: Icon, color: Int, private val size: Int) : Drawable() {
@@ -319,6 +319,25 @@ class IconDrawable(private val kind: Icon, color: Int, private val size: Int) : 
                 c.drawCircle(cx + (j - 0.5f) * s * 0.24f, cy + i * s * 0.24f, s * 0.065f, fill)
             }
             Icon.MORE -> for (i in -1..1) c.drawCircle(cx, cy + i * s * 0.24f, s * 0.07f, fill)
+            Icon.CAMERA -> {
+                // body
+                c.drawRoundRect(RectF(cx - s * 0.32f, cy - s * 0.18f, cx + s * 0.32f, cy + s * 0.24f), s * 0.07f, s * 0.07f, stroke)
+                // top bump
+                c.drawLine(cx - s * 0.10f, cy - s * 0.26f, cx + s * 0.10f, cy - s * 0.26f, stroke)
+                // lens
+                c.drawCircle(cx, cy + s * 0.03f, s * 0.10f, stroke)
+            }
+            Icon.IMAGE -> {
+                c.drawRoundRect(RectF(cx - s * 0.30f, cy - s * 0.24f, cx + s * 0.30f, cy + s * 0.24f), s * 0.06f, s * 0.06f, stroke)
+                val path = Path().apply {
+                    moveTo(cx - s * 0.22f, cy + s * 0.14f)
+                    lineTo(cx - s * 0.04f, cy - s * 0.04f)
+                    lineTo(cx + s * 0.08f, cy + s * 0.08f)
+                    lineTo(cx + s * 0.14f, cy + s * 0.02f)
+                    lineTo(cx + s * 0.22f, cy + s * 0.14f)
+                }
+                c.drawPath(path, stroke)
+            }
             Icon.BACK -> {
                 val path = Path().apply {
                     moveTo(cx + s * 0.10f, cy - s * 0.26f)

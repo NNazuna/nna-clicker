@@ -20,6 +20,7 @@ import kotlin.system.exitProcess
  *   STOP                         -> @@OK
  *   LOOP                         -> @@OK <n>   (-1 = tidak sedang memutar)
  *   ERR                          -> @@OK <pesan error terakhir>
+ *   SNAP                         -> @@OK <PNG base64>
  *   EXIT
  */
 object ShellMain {
@@ -54,6 +55,9 @@ object ShellMain {
                     "STOP" -> { engine.stopPlay(); ok() }
                     "LOOP" -> ok(engine.playLoop().toString())
                     "ERR" -> ok(engine.lastError())
+                    "SNAP" -> engine.snapPng()?.let {
+                        ok(android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP))
+                    } ?: err("screencap failed")
                     "EXIT" -> break
                     else -> err("unknown command: ${p[0]}")
                 }

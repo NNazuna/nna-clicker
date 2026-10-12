@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">NNA Clicker</string>
-    <string name="a11y_desc">Records your taps and swipes and plays them back. Touches are only read while recording, and screen content is never read.</string>
+    <string name="a11y_desc">Records your taps and swipes and plays them back. Touches are only read while recording. The screen is captured only for image steps, and images stay on your device.</string>
 </resources>

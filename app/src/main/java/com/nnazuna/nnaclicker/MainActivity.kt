@@ -400,7 +400,7 @@ class MainActivity : Activity() {
             }
             col.addView(k.text(r.name, 16f, if (isSel) 2 else 1))
                         col.addView(k.text(
-                "${r.gestures.size} actions  ·  ${Ui.fmtSec(r.length)}  ·  ${fmt.format(Date(r.created))}",
+                "${r.gestures.size} actions" + (if (r.images.isNotEmpty()) ", ${r.images.size} image" else "") + "  ·  ${Ui.fmtSec(r.length)}  ·  ${fmt.format(Date(r.created))}",
                 13f, 0, p.muted,
             ).apply { setPadding(0, k.dp(3f), 0, 0); fontFeatureSettings = "tnum" })
             row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
