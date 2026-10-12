@@ -12,9 +12,6 @@ import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.ScrollView
 import android.widget.TextView
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * Editor rekaman berbentuk garis waktu: langkah-langkah berurutan (gerakan dan langkah gambar),
@@ -110,8 +107,31 @@ class EditorActivity : Activity() {
     }
 
     private fun save() {
+        // Keep the on-screen order even when two steps end up at the same time.
+        for (i in 1 until steps.size) {
+            if (steps[i].at <= steps[i - 1].at) steps[i].at = steps[i - 1].at + 1
+        }
         storage.save(rec)
         render()
+    }
+
+    /**
+     * Move a step to another position. The delays stay where they were in the sequence,
+     * so the rhythm of the recording doesn't change.
+     */
+    private fun move(from: Int, to: Int) {
+        if (to !in steps.indices || from == to) return
+        val gaps = steps.indices.map { gapBefore(it) }
+        val start = steps.first().at
+        val order = steps.toMutableList()
+        order.add(to, order.removeAt(from))
+        var prevEnd = 0L
+        order.forEachIndexed { i, st ->
+            st.at = if (i == 0) start else prevEnd + gaps[i]
+            prevEnd = st.at + st.duration
+        }
+        steps = order
+        save()
     }
 
     private fun render() {
@@ -225,15 +245,23 @@ class EditorActivity : Activity() {
     private fun stepMenu(anchor: View, i: Int) {
         PopupMenu(this, anchor, Gravity.END).apply {
             if (steps[i] is ImageStep) menu.add(0, 4, 0, "Edit image")
-            if (i > 0) menu.add(0, 1, 1, "Edit delay")
-            menu.add(0, 2, 2, "Duplicate")
-            menu.add(0, 3, 3, "Delete")
+            if (i > 0) menu.add(0, 5, 1, "Move up")
+            if (i < steps.size - 1) menu.add(0, 6, 2, "Move down")
+            if (steps.size > 2) menu.add(0, 7, 3, "Move to…")
+            if (i > 0) menu.add(0, 1, 4, "Edit delay")
+            menu.add(0, 2, 5, "Duplicate")
+            menu.add(0, 3, 6, "Delete")
             setOnMenuItemClickListener {
                 when (it.itemId) {
                     1 -> askGap(i)
                     2 -> duplicate(i)
                     3 -> delete(i)
                     4 -> openImage(steps[i] as ImageStep)
+                    5 -> move(i, i - 1)
+                    6 -> move(i, i + 1)
+                    7 -> Ui.numberDialog(this@EditorActivity, p, "Move step ${i + 1} to", "${i + 1}", false, "1–${steps.size}") { v ->
+                        v.toIntOrNull()?.let { n -> move(i, (n - 1).coerceIn(0, steps.size - 1)) }
+                    }
                 }
                 true
             }
@@ -284,25 +312,12 @@ class EditorActivity : Activity() {
 
     /** Append an image step from a saved screenshot, then open it to choose the area. */
     private fun addImageStep() {
-        val snaps = storage.snaps()
-        if (snaps.isEmpty()) {
-            AlertDialog.Builder(this, Ui.dialogTheme(p))
-                .setTitle("No screenshots yet")
-                .setMessage("Open the game, then press the camera button on the floating panel. The screenshot will show up here.")
-                .setPositiveButton("OK", null).show()
-            return
+        SnapPicker.show(this, k, storage, "Add image step from") { file ->
+            val end = steps.maxOfOrNull { it.at + it.duration } ?: 0L
+            val s = ImageStep(end + 500, file.name)
+            rec.images.add(s)
+            storage.save(rec)
+            openImage(s)
         }
-        val fmt = SimpleDateFormat("MMM d, HH:mm:ss", Locale.US)
-        val labels = snaps.map { "Screenshot · " + fmt.format(Date(it.lastModified())) }.toTypedArray()
-        AlertDialog.Builder(this, Ui.dialogTheme(p))
-            .setTitle("Add image step from")
-            .setItems(labels) { _, which ->
-                val end = steps.maxOfOrNull { it.at + it.duration } ?: 0L
-                val s = ImageStep(end + 500, snaps[which].name)
-                rec.images.add(s)
-                storage.save(rec)
-                openImage(s)
-            }
-            .show()
     }
 }

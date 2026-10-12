@@ -140,6 +140,9 @@ class MainActivity : Activity() {
         })
         listGroup = k.group()
         root.addView(listGroup)
+        root.addView(k.textButton("Screenshots", p.play) {
+            SnapPicker.show(this, k, storage, "Screenshots", null)
+        }.apply { setPadding(k.dp(4f), k.dp(10f), k.dp(4f), k.dp(4f)) })
 
         // ---- Pemutaran ----
         root.addView(k.sectionHeader("Playback"))

@@ -253,7 +253,7 @@ object ImageMatcher {
         for (cand in cands) {
             var px = cand[0]; var py = cand[1]
             var level = c
-            var score = 0f
+            var score: Float
             while (true) {
                 val iL = il(level)
                 val tL = tl(level)

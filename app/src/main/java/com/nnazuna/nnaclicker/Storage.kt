@@ -43,6 +43,14 @@ class Storage(context: Context) {
     fun snaps(): List<File> =
         (snapDir.listFiles { f -> f.name.endsWith(".png") } ?: emptyArray()).sortedByDescending { it.lastModified() }
 
+    /** How many image steps use each screenshot. */
+    fun snapUsage(): Map<String, Int> =
+        list().flatMap { r -> r.images.mapNotNull { it.snap } }.groupingBy { it }.eachCount()
+
+    fun deleteSnap(name: String) {
+        File(snapDir, name).delete()
+    }
+
     private fun pruneSnaps() {
         val used = list().flatMap { r -> r.images.mapNotNull { it.snap } }.toSet()
         snaps().drop(12).filter { it.name !in used }.forEach { it.delete() }

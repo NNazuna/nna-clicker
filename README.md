@@ -39,7 +39,8 @@ The app falls back to the Standard engine automatically if Shizuku is unavailabl
 
 **Image detection**
 - Image steps: wait until something appears on screen, tap it wherever it is, or wait until it disappears
-- Mark image steps while recording with the camera button, then choose the area in the editor
+- Mark image steps while recording with the camera button, then choose the area in the editor with zoom and a live preview
+- Manage saved screenshots and delete the ones you no longer need
 - Search near the original spot (faster) or anywhere on screen
 - Time limit per step, with stop or skip when the image isn't found
 - On-device matching with a color check; nothing is uploaded
@@ -51,7 +52,7 @@ The app falls back to the Standard engine automatically if Shizuku is unavailabl
 - Optional screen dimming during playback; the screen stays on while a recording plays
 
 **Editing and sharing**
-- Step editor: change the delay before any step, set all delays at once, duplicate or delete steps
+- Step editor: reorder steps, change the delay before any step, set all delays at once, duplicate or delete steps
 - Import and export recordings as JSON
 
 **Interface**
@@ -61,7 +62,7 @@ The app falls back to the Standard engine automatically if Shizuku is unavailabl
 
 1. Open the game and start recording.
 2. When the screen you want to wait for is showing, press the **camera** button on the panel, then continue recording.
-3. Stop recording and open **Edit** on the recording. Tap the image step and drag a box around the button or icon to look for.
+3. Stop recording and open **Edit** on the recording. Tap the image step and drag a box around the button or icon to look for. Pinch or double-tap to zoom for a precise box.
 4. Choose what happens when it's found: **Wait for it**, **Tap it**, or **Wait until gone**.
 
 Screenshots taken outside a recording can be added with **Add image step** in the editor.

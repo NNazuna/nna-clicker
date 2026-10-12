@@ -21,9 +21,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -88,17 +85,49 @@ class ImageStepActivity : Activity() {
 
         val bmp = shot
         if (bmp != null) {
-            root.addView(k.text("Drag to select what to look for", 14f, 0, p.muted).apply {
-                setPadding(k.dp(8f), k.dp(4f), 0, k.dp(8f))
+            root.addView(k.text("Drag a box around what to look for. Pinch or double-tap to zoom, move with two fingers.", 14f, 0, p.muted).apply {
+                setPadding(k.dp(8f), k.dp(4f), k.dp(8f), k.dp(8f))
             })
             val initial = if (step.w > 0 && step.h > 0) Rect(step.x, step.y, step.x + step.w, step.y + step.h)
             else Rect(bmp.width * 3 / 8, bmp.height * 3 / 8, bmp.width * 5 / 8, bmp.height / 2)
-            val cv = CropView(this, bmp, initial, p.play)
-            crop = cv
             val maxH = resources.displayMetrics.heightPixels * 55 / 100
-            root.addView(cv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, maxH).apply {
-                bottomMargin = k.dp(4f)
+            val cv = CropView(this, bmp, initial, p.play, maxH)
+            crop = cv
+            root.addView(cv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                bottomMargin = k.dp(6f)
             })
+
+            // Zoom controls + live preview of the selection
+            val bar = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(k.dp(4f), 0, k.dp(4f), 0)
+            }
+            fun zbtn(label: String, onClick: () -> Unit) = k.text(label, 18f, 2, p.ink).apply {
+                gravity = Gravity.CENTER
+                minWidth = k.dp(48f); minHeight = k.dp(44f)
+                background = k.ripple(k.rounded(p.surface, 12f), k.dp(12f).toFloat())
+                setOnClickListener { onClick() }
+            }
+            bar.addView(zbtn("−") { cv.zoomBy(1 / 1.6f) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { rightMargin = k.dp(6f) })
+            bar.addView(zbtn("+") { cv.zoomBy(1.6f) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { rightMargin = k.dp(6f) })
+            bar.addView(k.textButton("Zoom to box", p.play) { cv.zoomToSelection() })
+            bar.addView(k.textButton("Fit", p.play) { cv.resetZoom() })
+            bar.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+            val preview = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                background = k.rounded(p.surface, 10f, p.line)
+                setPadding(k.dp(4f), k.dp(4f), k.dp(4f), k.dp(4f))
+            }
+            bar.addView(preview, LinearLayout.LayoutParams(k.dp(84f), k.dp(56f)))
+            root.addView(bar)
+
+            fun showPreview(r: Rect) {
+                if (r.width() < 2 || r.height() < 2) return
+                preview.setImageBitmap(Bitmap.createBitmap(bmp, r.left, r.top, r.width(), r.height()))
+            }
+            cv.onChange = { showPreview(it) }
+            showPreview(cv.selection())
         } else {
             root.addView(k.text(
                 if (step.ready) "The original screenshot is gone. Pick a new one to change the area."
@@ -188,25 +217,13 @@ class ImageStepActivity : Activity() {
     }
 
     private fun pickScreenshot() {
-        val snaps = storage.snaps()
-        if (snaps.isEmpty()) {
-            AlertDialog.Builder(this, Ui.dialogTheme(p))
-                .setMessage("No screenshots yet. Press the camera button on the floating panel while the game is open.")
-                .setPositiveButton("OK", null).show()
-            return
+        SnapPicker.show(this, k, storage, "Use screenshot") { file ->
+            saveOptionsOnly()
+            step.snap = file.name
+            step.w = 0; step.h = 0
+            storage.save(rec)
+            recreate()
         }
-        val fmt = SimpleDateFormat("MMM d, HH:mm:ss", Locale.US)
-        val labels = snaps.map { "Screenshot · " + fmt.format(Date(it.lastModified())) }.toTypedArray()
-        AlertDialog.Builder(this, Ui.dialogTheme(p))
-            .setTitle("Screenshot")
-            .setItems(labels) { _, which ->
-                saveOptionsOnly()
-                step.snap = snaps[which].name
-                step.w = 0; step.h = 0
-                storage.save(rec)
-                recreate()
-            }
-            .show()
     }
 
     /** Persist the option choices without touching the area. */
@@ -246,67 +263,167 @@ fun templateBitmap(s: ImageStep): Bitmap? {
     return Bitmap.createBitmap(px, s.tw, s.th, Bitmap.Config.ARGB_8888)
 }
 
-/** Screenshot with a draggable selection rectangle (bitmap coordinates). */
+/**
+ * Screenshot with a draggable selection rectangle (bitmap coordinates).
+ * One finger edits the selection; two fingers pinch to zoom and move the picture;
+ * double-tap zooms in on that spot (or back out).
+ */
 @SuppressLint("ViewConstructor")
-class CropView(ctx: Context, private val bmp: Bitmap, initial: Rect, private val accent: Int) : View(ctx) {
+class CropView(ctx: Context, private val bmp: Bitmap, initial: Rect, private val accent: Int, private val maxHeight: Int) : View(ctx) {
     private val sel = RectF(initial)
-    private val dst = RectF()
-    private var scale = 1f
+    private val density = resources.displayMetrics.density
+
+    // view = offset + bitmap * scale
+    private var fit = 1f
+    private var zoom = 1f
+    private var ox = 0f
+    private var oy = 0f
+    private val scale get() = fit * zoom
+
+    /** Called whenever the selection changes. */
+    var onChange: ((Rect) -> Unit)? = null
+
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val shade = Paint().apply { color = 0x99000000.toInt() }
     private val frame = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 2.5f * resources.displayMetrics.density
+        strokeWidth = 2f * density
         color = accent
     }
     private val handle = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = accent }
-    private val touchSlop = 28 * resources.displayMetrics.density
+    private val touchSlop = 26 * density
 
-    private enum class Mode { NONE, MOVE, NEW, TL, TR, BL, BR }
+    private enum class Mode { NONE, MOVE, NEW, TL, TR, BL, BR, GESTURE }
     private var mode = Mode.NONE
     private var lastX = 0f
     private var lastY = 0f
     private var startBX = 0f
     private var startBY = 0f
+    private var lastFocusX = 0f
+    private var lastFocusY = 0f
+
+    private val scaler = android.view.ScaleGestureDetector(ctx, object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScale(d: android.view.ScaleGestureDetector): Boolean {
+            zoomAt(zoom * d.scaleFactor, d.focusX, d.focusY)
+            return true
+        }
+    })
+
+    private val taps = android.view.GestureDetector(ctx, object : android.view.GestureDetector.SimpleOnGestureListener() {
+        override fun onDoubleTap(e: MotionEvent): Boolean {
+            if (zoom > 1.5f) resetZoom() else zoomAt(4f, e.x, e.y)
+            return true
+        }
+    })
 
     fun selection(): Rect = Rect(
         sel.left.toInt().coerceIn(0, bmp.width), sel.top.toInt().coerceIn(0, bmp.height),
         sel.right.toInt().coerceIn(0, bmp.width), sel.bottom.toInt().coerceIn(0, bmp.height),
     )
 
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        scale = min(w.toFloat() / bmp.width, h.toFloat() / bmp.height)
-        val dw = bmp.width * scale
-        val dh = bmp.height * scale
-        dst.set((w - dw) / 2, (h - dh) / 2, (w + dw) / 2, (h + dh) / 2)
+    fun zoomBy(f: Float) = zoomAt(zoom * f, width / 2f, height / 2f)
+
+    /** Zoom so the selection fills most of the view. */
+    fun zoomToSelection() {
+        val z = (min(width / (sel.width() * fit), height / (sel.height() * fit)) * 0.5f).coerceIn(1f, 10f)
+        zoom = z
+        ox = width / 2f - sel.centerX() * scale
+        oy = height / 2f - sel.centerY() * scale
+        clamp()
+        invalidate()
     }
 
-    private fun toView(x: Float, y: Float) = Pair(dst.left + x * scale, dst.top + y * scale)
-    private fun toBmp(x: Float, y: Float) = Pair(
-        ((x - dst.left) / scale).coerceIn(0f, bmp.width.toFloat()),
-        ((y - dst.top) / scale).coerceIn(0f, bmp.height.toFloat()),
-    )
+    fun resetZoom() {
+        zoom = 1f
+        center()
+        invalidate()
+    }
+
+    private fun center() {
+        ox = (width - bmp.width * scale) / 2
+        oy = (height - bmp.height * scale) / 2
+    }
+
+    private fun zoomAt(newZoom: Float, fx: Float, fy: Float) {
+        val z = newZoom.coerceIn(1f, 10f)
+        // keep the bitmap point under the focus fixed
+        val bx = (fx - ox) / scale
+        val by = (fy - oy) / scale
+        zoom = z
+        ox = fx - bx * scale
+        oy = fy - by * scale
+        clamp()
+        invalidate()
+    }
+
+    /** Keep the picture covering the view (or centered when smaller). */
+    private fun clamp() {
+        val w = bmp.width * scale
+        val h = bmp.height * scale
+        ox = if (w <= width) (width - w) / 2 else ox.coerceIn(width - w, 0f)
+        oy = if (h <= height) (height - h) / 2 else oy.coerceIn(height - h, 0f)
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val w = MeasureSpec.getSize(widthMeasureSpec)
+        val h = min(maxHeight, (w.toLong() * bmp.height / bmp.width).toInt())
+        setMeasuredDimension(w, h)
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        fit = min(w.toFloat() / bmp.width, h.toFloat() / bmp.height)
+        center()
+        clamp()
+    }
+
+    private fun vx(x: Float) = ox + x * scale
+    private fun vy(y: Float) = oy + y * scale
+    private fun bx(x: Float) = ((x - ox) / scale).coerceIn(0f, bmp.width.toFloat())
+    private fun by(y: Float) = ((y - oy) / scale).coerceIn(0f, bmp.height.toFloat())
+
+    private val dst = RectF()
 
     override fun onDraw(c: Canvas) {
+        dst.set(ox, oy, ox + bmp.width * scale, oy + bmp.height * scale)
+        c.save()
+        c.clipRect(0f, 0f, width.toFloat(), height.toFloat())
         c.drawBitmap(bmp, null, dst, paint)
-        val (l, t) = toView(sel.left, sel.top)
-        val (r, b) = toView(sel.right, sel.bottom)
+        val l = vx(sel.left); val t = vy(sel.top); val r = vx(sel.right); val b = vy(sel.bottom)
         c.drawRect(dst.left, dst.top, dst.right, t, shade)
         c.drawRect(dst.left, b, dst.right, dst.bottom, shade)
         c.drawRect(dst.left, t, l, b, shade)
         c.drawRect(r, t, dst.right, b, shade)
         c.drawRect(l, t, r, b, frame)
-        val hr = 6 * resources.displayMetrics.density
+        val hr = 5.5f * density
         for ((x, y) in listOf(l to t, r to t, l to b, r to b)) c.drawCircle(x, y, hr, handle)
+        c.restore()
     }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        parent?.requestDisallowInterceptTouchEvent(true)
+        taps.onTouchEvent(e)
+        scaler.onTouchEvent(e)
+
+        // Two fingers: zoom and move the picture, never the selection.
+        if (e.pointerCount >= 2) {
+            val fx = (e.getX(0) + e.getX(1)) / 2
+            val fy = (e.getY(0) + e.getY(1)) / 2
+            if (mode != Mode.GESTURE) {
+                mode = Mode.GESTURE
+            } else {
+                ox += fx - lastFocusX
+                oy += fy - lastFocusY
+                clamp()
+                invalidate()
+            }
+            lastFocusX = fx; lastFocusY = fy
+            return true
+        }
+
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                parent?.requestDisallowInterceptTouchEvent(true)
-                val (l, t) = toView(sel.left, sel.top)
-                val (r, b) = toView(sel.right, sel.bottom)
+                val l = vx(sel.left); val t = vy(sel.top); val r = vx(sel.right); val b = vy(sel.bottom)
                 fun near(x: Float, y: Float) = abs(e.x - x) < touchSlop && abs(e.y - y) < touchSlop
                 mode = when {
                     near(l, t) -> Mode.TL
@@ -316,31 +433,39 @@ class CropView(ctx: Context, private val bmp: Bitmap, initial: Rect, private val
                     e.x in l..r && e.y in t..b -> Mode.MOVE
                     else -> Mode.NEW
                 }
-                val (bx, by) = toBmp(e.x, e.y)
-                startBX = bx; startBY = by
-                lastX = bx; lastY = by
-                if (mode == Mode.NEW) sel.set(bx, by, bx, by)
+                val x = bx(e.x); val y = by(e.y)
+                startBX = x; startBY = y
+                lastX = x; lastY = y
             }
             MotionEvent.ACTION_MOVE -> {
-                val (bx, by) = toBmp(e.x, e.y)
+                if (mode == Mode.GESTURE || mode == Mode.NONE) return true
+                val x = bx(e.x); val y = by(e.y)
+                val minSide = 16f
                 when (mode) {
                     Mode.MOVE -> {
-                        val dx = (bx - lastX).coerceIn(-sel.left, bmp.width - sel.right)
-                        val dy = (by - lastY).coerceIn(-sel.top, bmp.height - sel.bottom)
+                        val dx = (x - lastX).coerceIn(-sel.left, bmp.width - sel.right)
+                        val dy = (y - lastY).coerceIn(-sel.top, bmp.height - sel.bottom)
                         sel.offset(dx, dy)
                     }
-                    Mode.NEW -> sel.set(min(startBX, bx), min(startBY, by), max(startBX, bx), max(startBY, by))
-                    Mode.TL -> { sel.left = min(bx, sel.right - 8); sel.top = min(by, sel.bottom - 8) }
-                    Mode.TR -> { sel.right = max(bx, sel.left + 8); sel.top = min(by, sel.bottom - 8) }
-                    Mode.BL -> { sel.left = min(bx, sel.right - 8); sel.bottom = max(by, sel.top + 8) }
-                    Mode.BR -> { sel.right = max(bx, sel.left + 8); sel.bottom = max(by, sel.top + 8) }
-                    Mode.NONE -> {}
+                    Mode.NEW -> {
+                        // Start a new box only after a real drag, so a tap doesn't wipe the selection.
+                        if (abs(x - startBX) * scale > 8 * density || abs(y - startBY) * scale > 8 * density) {
+                            sel.set(min(startBX, x), min(startBY, y), max(startBX, x), max(startBY, y))
+                        }
+                    }
+                    Mode.TL -> { sel.left = min(x, sel.right - minSide); sel.top = min(y, sel.bottom - minSide) }
+                    Mode.TR -> { sel.right = max(x, sel.left + minSide); sel.top = min(y, sel.bottom - minSide) }
+                    Mode.BL -> { sel.left = min(x, sel.right - minSide); sel.bottom = max(y, sel.top + minSide) }
+                    Mode.BR -> { sel.right = max(x, sel.left + minSide); sel.bottom = max(y, sel.top + minSide) }
+                    else -> {}
                 }
-                lastX = bx; lastY = by
+                lastX = x; lastY = y
                 invalidate()
+                onChange?.invoke(selection())
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 parent?.requestDisallowInterceptTouchEvent(false)
+                if (mode != Mode.GESTURE) onChange?.invoke(selection())
                 mode = Mode.NONE
             }
         }

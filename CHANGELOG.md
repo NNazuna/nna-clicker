@@ -3,6 +3,18 @@
 All notable changes to NNA Clicker are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-10-13
+
+### Added
+- Move steps up or down, or to a specific position, from the step menu. Delays stay in place, so the rhythm of the recording is kept.
+- Zoom in the crop screen: pinch, double-tap, or the + and − buttons, move with two fingers, and "Zoom to box".
+- Live preview of the selected area while cropping.
+- Screenshot manager with thumbnails: delete single screenshots or all unused ones. Open it from **Screenshots** on the main screen or when picking a screenshot.
+
+### Changed
+- The crop area now matches the screenshot's shape, so landscape screenshots no longer leave empty space.
+- A single tap outside the box no longer resets the selection; drag to draw a new one.
+
 ## [1.1.0] - 2026-10-13
 
 ### Added
