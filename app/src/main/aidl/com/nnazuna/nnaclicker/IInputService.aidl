@@ -1,0 +1,21 @@
+package com.nnazuna.nnaclicker;
+
+// Dijalankan Shizuku sebagai proses shell (uid 2000): boleh membaca /dev/input dan menyuntik sentuhan.
+interface IInputService {
+    void destroy() = 16777114;
+
+    String probe() = 1;
+
+    boolean startRecord(int natW, int natH, int rotation) = 2;
+    int recordCount() = 3;
+    int stopRecord() = 4;
+    String readResult(int offset, int length) = 5;
+
+    void beginUpload() = 6;
+    void appendUpload(String chunk) = 7;
+    boolean play(int loops, float speed, long intervalMs, long startDelayMs, float jitterPx, float jitterPct) = 8;
+    void stopPlay() = 9;
+    int playLoop() = 10;
+
+    String lastError() = 11;
+}

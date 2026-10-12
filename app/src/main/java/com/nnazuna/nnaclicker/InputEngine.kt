@@ -1,0 +1,317 @@
+package com.nnazuna.nnaclicker
+
+import android.os.Process
+import android.os.SystemClock
+import android.system.Os
+import android.system.OsConstants
+import android.system.StructPollfd
+import android.view.InputDevice
+import android.view.InputEvent
+import android.view.MotionEvent
+import org.json.JSONObject
+import java.io.FileDescriptor
+import java.lang.reflect.Method
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.util.Random
+import kotlin.concurrent.thread
+
+/**
+ * Mesin rekam/putar yang berjalan di proses ber-hak shell (lewat Shizuku), bukan di proses aplikasi.
+ * Dipakai oleh [ShizukuInputService] (layanan pengguna Shizuku) dan [ShellMain] (proses app_process sendiri).
+ * - Merekam: membaca event mentah touchscreen dari /dev/input/eventX secara langsung,
+ *   jadi sentuhan tetap sampai ke game seketika (tanpa lapisan penangkap → tanpa delay).
+ * - Memutar: menyuntik MotionEvent lewat InputManager dengan waktu yang presisi.
+ */
+class InputEngine {
+
+    private class Device(
+        val path: String,
+        val minX: Int, val maxX: Int,
+        val minY: Int, val maxY: Int,
+    )
+
+    @Volatile private var lastErr = ""
+    private var device: Device? = null
+
+    // --- rekam ---
+    private class Session(val builder: EvdevGestureBuilder) {
+        @Volatile var running = true
+    }
+    @Volatile private var session: Session? = null
+
+    // --- putar ---
+    @Volatile private var playing = false
+    @Volatile private var currentLoop = -1
+    private var playThread: Thread? = null
+    @Volatile private var injectFailed = false
+
+    private val injector: Pair<Any, Method>? by lazy {
+        try {
+            val cls = try {
+                Class.forName("android.hardware.input.InputManagerGlobal")
+            } catch (e: ClassNotFoundException) {
+                Class.forName("android.hardware.input.InputManager")
+            }
+            val inst = cls.getMethod("getInstance").invoke(null)!!
+            val m = cls.getMethod("injectInputEvent", InputEvent::class.java, Int::class.javaPrimitiveType)
+            Pair(inst, m)
+        } catch (e: Throwable) {
+            lastErr = "Injector: $e"
+            null
+        }
+    }
+
+    fun shutdown() {
+        stopPlay()
+        session?.running = false
+    }
+
+    fun lastError(): String = lastErr
+
+    // ---------------- deteksi touchscreen ----------------
+
+    private fun findDevice(): Device? {
+        device?.let { return it }
+        return try {
+            val p = Runtime.getRuntime().exec(arrayOf("getevent", "-pl"))
+            val text = p.inputStream.bufferedReader().readText()
+            p.waitFor()
+            val maxRe = Regex("min (-?\\d+), max (-?\\d+)")
+            var path: String? = null
+            var x: Pair<Int, Int>? = null
+            var y: Pair<Int, Int>? = null
+            var found: Device? = null
+            for (line in text.lines()) {
+                if (line.startsWith("add device")) {
+                    if (found == null && path != null && x != null && y != null) {
+                        found = Device(path, x.first, x.second, y.first, y.second)
+                    }
+                    path = line.substringAfter(": ").trim()
+                    x = null; y = null
+                    continue
+                }
+                val m = maxRe.find(line) ?: continue
+                val range = Pair(m.groupValues[1].toInt(), m.groupValues[2].toInt())
+                if (line.contains("ABS_MT_POSITION_X")) x = range
+                if (line.contains("ABS_MT_POSITION_Y")) y = range
+            }
+            if (found == null && path != null && x != null && y != null) {
+                found = Device(path, x.first, x.second, y.first, y.second)
+            }
+            if (found == null) lastErr = "Touchscreen not found"
+            device = found
+            found
+        } catch (e: Throwable) {
+            lastErr = "probe: $e"
+            null
+        }
+    }
+
+    fun probe(): String {
+        val d = findDevice() ?: return ""
+        return JSONObject().apply {
+            put("path", d.path)
+            put("minX", d.minX); put("maxX", d.maxX)
+            put("minY", d.minY); put("maxY", d.maxY)
+            put("is64", Process.is64Bit())
+        }.toString()
+    }
+
+    // ---------------- merekam ----------------
+
+    fun startRecord(natW: Int, natH: Int, rotation: Int): Boolean {
+        session?.running = false
+        val d = findDevice() ?: return false
+        val fd: FileDescriptor = try {
+            Os.open(d.path, OsConstants.O_RDONLY, 0)
+        } catch (e: Throwable) {
+            lastErr = "Can't open ${d.path}: $e"
+            return false
+        }
+        val startUs = System.currentTimeMillis() * 1000
+        val s = Session(EvdevGestureBuilder(d.minX, d.maxX, d.minY, d.maxY, natW, natH, rotation, startUs))
+        session = s
+        thread(name = "evdev-reader", isDaemon = true) { readLoop(fd, s) }
+        return true
+    }
+
+    private fun readLoop(fd: FileDescriptor, s: Session) {
+        // struct input_event: timeval (2 x long) + u16 type + u16 code + s32 value
+        val is64 = Process.is64Bit()
+        val size = if (is64) 24 else 16
+        val buf = ByteArray(size * 64)
+        val bb = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN)
+        val pfd = StructPollfd().apply {
+            this.fd = fd
+            events = OsConstants.POLLIN.toShort()
+        }
+        try {
+            while (s.running) {
+                pfd.revents = 0
+                if (Os.poll(arrayOf(pfd), 200) <= 0) continue
+                val n = Os.read(fd, buf, 0, buf.size)
+                if (n <= 0) continue
+                synchronized(s) {
+                    var off = 0
+                    while (off + size <= n) {
+                        val sec: Long
+                        val usec: Long
+                        if (is64) {
+                            sec = bb.getLong(off); usec = bb.getLong(off + 8)
+                        } else {
+                            sec = bb.getInt(off).toLong(); usec = bb.getInt(off + 4).toLong()
+                        }
+                        val type = bb.getShort(off + size - 8).toInt() and 0xffff
+                        val code = bb.getShort(off + size - 6).toInt() and 0xffff
+                        val value = bb.getInt(off + size - 4)
+                        s.builder.onEvent(sec * 1_000_000 + usec, type, code, value)
+                        off += size
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            lastErr = "read: $e"
+        } finally {
+            try { Os.close(fd) } catch (_: Throwable) {}
+        }
+    }
+
+    fun recordCount(): Int {
+        val s = session ?: return 0
+        return synchronized(s) { s.builder.gestures.size }
+    }
+
+    /** Hentikan rekaman, kembalikan JSON rekaman (format [Recording]). */
+    fun stopRecord(): String {
+        val s = session ?: return ""
+        s.running = false
+        session = null
+        val list = synchronized(s) { s.builder.gestures.toMutableList() }
+        return Recording("tmp", "tmp", 0L, list).toJson().toString()
+    }
+
+    // ---------------- memutar ----------------
+
+    fun playLoop(): Int = if (playing) currentLoop else -1
+
+    fun stopPlay() {
+        // Thread pemutar mengecek flag ini minimal tiap 100 ms lalu melepas jari yang masih menempel.
+        playing = false
+    }
+
+    fun play(
+        json: String,
+        loops: Int, speed: Float, intervalMs: Long, startDelayMs: Long,
+        jitterPx: Float, jitterPct: Float,
+    ): Boolean {
+        stopPlay()
+        playThread?.join(500)
+        val rec = try {
+            Recording.fromJson(JSONObject(json))
+        } catch (e: Throwable) {
+            lastErr = "Invalid recording: $e"
+            return false
+        }
+        lastErr = ""
+        injectFailed = false
+        if (rec.gestures.isEmpty() || injector == null) return false
+        val sp = speed.coerceIn(0.1f, 10f)
+        playing = true
+        currentLoop = 1
+        playThread = thread(name = "player", isDaemon = true) {
+            val rnd = Random()
+            try {
+                sleepFor(startDelayMs)
+                var loop = 1
+                while (playing && (loops == 0 || loop <= loops)) {
+                    currentLoop = loop
+                    var prevEnd = -1L
+                    var wallEnd = SystemClock.uptimeMillis()
+                    for (g in rec.gestures) {
+                        if (!playing) break
+                        if (prevEnd >= 0) {
+                            var gap = (g.at - prevEnd).coerceAtLeast(0L).toDouble()
+                            if (jitterPct > 0) gap *= 1 + (rnd.nextDouble() * 2 - 1) * jitterPct / 100.0
+                            sleepUntil(wallEnd + (gap / sp).toLong())
+                        }
+                        val gg = if (jitterPx > 0) g.shifted(
+                            ((rnd.nextDouble() * 2 - 1) * jitterPx).toFloat(),
+                            ((rnd.nextDouble() * 2 - 1) * jitterPx).toFloat(),
+                        ) else g
+                        wallEnd = inject(gg, sp)
+                        prevEnd = g.at + g.duration
+                    }
+                    loop++
+                    if (playing && (loops == 0 || loop <= loops)) sleepFor(intervalMs)
+                }
+            } catch (e: Throwable) {
+                lastErr = "play: $e"
+            } finally {
+                playing = false
+                currentLoop = -1
+            }
+        }
+        return true
+    }
+
+    private fun sleepFor(ms: Long) = sleepUntil(SystemClock.uptimeMillis() + ms)
+
+    private fun sleepUntil(target: Long) {
+        while (playing) {
+            val d = target - SystemClock.uptimeMillis()
+            if (d <= 0) return
+            if (d > 3) Thread.sleep(minOf(d - 2, 100)) else Thread.yield()
+        }
+    }
+
+    /** Suntik satu gerakan; mengembalikan uptime saat gerakan selesai. */
+    private fun inject(g: RecGesture, speed: Float): Long {
+        val frames = Timeline.frames(g)
+        val downTime = SystemClock.uptimeMillis()
+        var last: Frame? = null
+        for (f in frames) {
+            sleepUntil(downTime + (f.t / speed).toLong())
+            if (!playing) break
+            send(downTime, f.action, f)
+            last = f
+        }
+        // Dihentikan di tengah gerakan: batalkan supaya jari tidak "tersangkut".
+        val l = last
+        if (l != null && l.action and MotionEvent.ACTION_MASK != MotionEvent.ACTION_UP) {
+            send(downTime, MotionEvent.ACTION_CANCEL, l)
+        }
+        return SystemClock.uptimeMillis()
+    }
+
+    private fun send(downTime: Long, action: Int, f: Frame) {
+        val (im, m) = injector ?: return
+        val n = f.ids.size
+        val props = Array(n) {
+            MotionEvent.PointerProperties().apply {
+                id = f.ids[it]
+                toolType = MotionEvent.TOOL_TYPE_FINGER
+            }
+        }
+        val coords = Array(n) {
+            MotionEvent.PointerCoords().apply {
+                x = f.xs[it]; y = f.ys[it]
+                pressure = 1f; size = 1f
+            }
+        }
+        val ev = MotionEvent.obtain(
+            downTime, SystemClock.uptimeMillis(), action, n, props, coords,
+            0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0,
+        )
+        try {
+            m.invoke(im, ev, 0)
+        } catch (e: Throwable) {
+            // Contoh: SecurityException karena ROM memblokir suntik sentuhan dari ADB.
+            lastErr = "Touch injection blocked by system: ${e.cause ?: e}"
+            injectFailed = true
+            playing = false
+        } finally {
+            ev.recycle()
+        }
+    }
+}

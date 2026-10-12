@@ -1,0 +1,87 @@
+name: Build
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Prepare release
+        id: meta
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk NNA-Clicker.apk
+          version=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # Release notes: the CHANGELOG.md section for this version
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then echo "Build of NNA Clicker $version." > release-notes.md; fi
+          {
+            echo ""
+            echo "---"
+            echo "**Install:** download \`NNA-Clicker.apk\` below. Requires Android 7.0 or later."
+          } >> release-notes.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NNA-Clicker-${{ steps.meta.outputs.version }}
+          path: NNA-Clicker.apk
+
+      # Remove stale releases: tags that are not vX.Y.Z, or versions newer than the one being built
+      - name: Remove stale releases
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CURRENT: ${{ steps.meta.outputs.version }}
+        run: |
+          for t in $(gh release list -R "$REPO" --limit 100 --json tagName --jq '.[].tagName'); do
+            v="${t#v}"
+            if ! echo "$t" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              stale=1
+            elif [ "$v" != "$CURRENT" ] && [ "$(printf '%s\n%s\n' "$CURRENT" "$v" | sort -V | tail -1)" = "$v" ]; then
+              stale=1
+            else
+              stale=0
+            fi
+            if [ "$stale" = 1 ]; then gh release delete "$t" -R "$REPO" --yes --cleanup-tag || true; fi
+          done
+
+      # Point the version tag at this commit, so a re-push of the same version replaces the old tag
+      - name: Move version tag
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git tag -f "v${{ steps.meta.outputs.version }}"
+          git push -f origin "refs/tags/v${{ steps.meta.outputs.version }}"
+
+      - name: Publish release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.meta.outputs.version }}
+          name: NNA Clicker v${{ steps.meta.outputs.version }}
+          body_path: release-notes.md
+          files: NNA-Clicker.apk
+          make_latest: true
