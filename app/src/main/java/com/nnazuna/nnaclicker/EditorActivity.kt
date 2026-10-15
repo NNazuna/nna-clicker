@@ -71,7 +71,7 @@ class EditorActivity : Activity() {
             setPadding(k.dp(38f), 0, 0, k.dp(8f))
         }
         actions.addView(k.textButton("Set all delays", p.play) { setAllGaps() })
-        actions.addView(k.textButton("Add image step", p.play) { addImageStep() })
+        actions.addView(k.textButton("Add step", p.play) { addStep(-1) })
         root.addView(actions)
 
         listBox = LinearLayout(this).apply {
@@ -245,6 +245,9 @@ class EditorActivity : Activity() {
     private fun stepMenu(anchor: View, i: Int) {
         PopupMenu(this, anchor, Gravity.END).apply {
             if (steps[i] is ImageStep) menu.add(0, 4, 0, "Edit image")
+            val g = steps[i] as? RecGesture
+            if (g != null && g.strokes.size == 1) menu.add(0, 8, 0, "Edit position")
+            menu.add(0, 9, 7, "Add step after")
             if (i > 0) menu.add(0, 5, 1, "Move up")
             if (i < steps.size - 1) menu.add(0, 6, 2, "Move down")
             if (steps.size > 2) menu.add(0, 7, 3, "Move to…")
@@ -257,6 +260,8 @@ class EditorActivity : Activity() {
                     2 -> duplicate(i)
                     3 -> delete(i)
                     4 -> openImage(steps[i] as ImageStep)
+                    8 -> editGesture(steps[i] as RecGesture)
+                    9 -> addStep(i)
                     5 -> move(i, i - 1)
                     6 -> move(i, i + 1)
                     7 -> Ui.numberDialog(this@EditorActivity, p, "Move step ${i + 1} to", "${i + 1}", false, "1–${steps.size}") { v ->
@@ -310,11 +315,45 @@ class EditorActivity : Activity() {
         save()
     }
 
-    /** Append an image step from a saved screenshot, then open it to choose the area. */
-    private fun addImageStep() {
+    /** Add a tap, swipe, or image step after step [after] (-1 = at the end). */
+    private fun addStep(after: Int) {
+        val anchor = steps.getOrNull(after)
+        val afterEnd = anchor?.let { it.at + it.duration } ?: -1L
+        val afterStart = anchor?.at ?: -1L
+        AlertDialog.Builder(this, Ui.dialogTheme(p))
+            .setTitle(if (anchor == null) "Add step" else "Add step after ${after + 1}")
+            .setItems(arrayOf("Tap", "Swipe", "Image (from a screenshot)")) { _, which ->
+                when (which) {
+                    0, 1 -> startActivity(
+                        Intent(this, PointActivity::class.java)
+                            .putExtra(PointActivity.EXTRA_REC, rec.id)
+                            .putExtra(PointActivity.EXTRA_MODE, if (which == 0) PointActivity.MODE_TAP else PointActivity.MODE_SWIPE)
+                            .putExtra(PointActivity.EXTRA_AFTER, afterEnd)
+                            .putExtra(PointActivity.EXTRA_AFTER_START, afterStart)
+                    )
+                    else -> addImageStep(afterEnd, afterStart)
+                }
+            }
+            .show()
+    }
+
+    private fun editGesture(g: RecGesture) {
+        startActivity(
+            Intent(this, PointActivity::class.java)
+                .putExtra(PointActivity.EXTRA_REC, rec.id)
+                .putExtra(PointActivity.EXTRA_GESTURE, rec.gestures.indexOf(g))
+        )
+    }
+
+    /** Add an image step from a saved screenshot, then open it to choose the area. */
+    private fun addImageStep(afterEnd: Long, afterStart: Long) {
         SnapPicker.show(this, k, storage, "Add image step from") { file ->
-            val end = steps.maxOfOrNull { it.at + it.duration } ?: 0L
-            val s = ImageStep(end + 500, file.name)
+            val gap = PointActivity.GAP
+            val at = if (afterEnd >= 0) {
+                steps.filter { it.at > afterEnd || (it.at == afterEnd && it.at > afterStart) }.forEach { it.at += gap }
+                afterEnd + gap
+            } else (steps.maxOfOrNull { it.at + it.duration } ?: -gap) + gap
+            val s = ImageStep(at, file.name)
             rec.images.add(s)
             storage.save(rec)
             openImage(s)

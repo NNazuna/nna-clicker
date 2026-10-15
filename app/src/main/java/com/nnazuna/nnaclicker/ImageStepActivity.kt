@@ -1,19 +1,13 @@
 package com.nnazuna.nnaclicker
 
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
 import android.graphics.Rect
-import android.graphics.RectF
 import android.os.Bundle
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -21,9 +15,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
 
 /** Choose the area of a screenshot to look for, and what to do when it's found. */
 class ImageStepActivity : Activity() {
@@ -143,9 +134,14 @@ class ImageStepActivity : Activity() {
                 }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, k.dp(96f)))
             }
         }
-        root.addView(k.textButton("Use another screenshot", p.play) { pickScreenshot() }.apply {
+        val links = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        links.addView(k.textButton("Test on screen", p.play) { test() }.apply {
+            setPadding(k.dp(8f), k.dp(10f), k.dp(12f), k.dp(10f))
+        })
+        links.addView(k.textButton("Use another screenshot", p.play) { pickScreenshot() }.apply {
             setPadding(k.dp(8f), k.dp(10f), k.dp(8f), k.dp(10f))
         })
+        root.addView(links)
 
         // ---- Options ----
         root.addView(k.sectionHeader("When playing"))
@@ -231,28 +227,109 @@ class ImageStepActivity : Activity() {
         storage.save(rec)
     }
 
-    private fun save() {
+    /**
+     * The step as it would be saved: current box and options. Returns null (with a message)
+     * when there is nothing to look for yet. When [apply] is false, a copy is returned and
+     * the real step is left unchanged.
+     */
+    private fun buildStep(apply: Boolean): ImageStep? {
+        val target = if (apply) step else step.copy()
         val bmp = shot
         val cv = crop
         if (bmp != null && cv != null) {
             val r = cv.selection()
             if (r.width() < 16 || r.height() < 16) {
                 Toast.makeText(this, "Select a bigger area", Toast.LENGTH_SHORT).show()
-                return
+                return null
             }
             val px = IntArray(bmp.width * bmp.height)
             bmp.getPixels(px, 0, bmp.width, 0, 0, bmp.width, bmp.height)
             val t = ImageMatcher.cut(px, bmp.width, bmp.height, r.left, r.top, r.width(), r.height())
-            step.x = r.left; step.y = r.top; step.w = r.width(); step.h = r.height()
-            step.screenW = bmp.width; step.screenH = bmp.height
-            step.tw = t.w; step.th = t.h; step.tpl = t.rgb
-        } else if (!step.ready) {
+            target.x = r.left; target.y = r.top; target.w = r.width(); target.h = r.height()
+            target.screenW = bmp.width; target.screenH = bmp.height
+            target.tw = t.w; target.th = t.h; target.tpl = t.rgb
+        } else if (!target.ready) {
             Toast.makeText(this, "Pick a screenshot first", Toast.LENGTH_SHORT).show()
-            return
+            return null
         }
+        return target
+    }
+
+    private fun save() {
+        buildStep(apply = true) ?: return
         storage.save(rec)
         Toast.makeText(this, "Image step saved", Toast.LENGTH_SHORT).show()
         finish()
+    }
+
+    // ---------- test on the live screen ----------
+
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var testResult: (() -> Unit)? = null
+
+    /**
+     * Go to the game, look for the current box on the real screen after a short countdown,
+     * then come back here with the result.
+     */
+    private fun test() {
+        val svc = RecorderService.instance
+        if (svc == null) {
+            Toast.makeText(this, "Turn on the accessibility service first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val tmp = buildStep(apply = false) ?: return
+        Toast.makeText(this, "Open the game. Checking the screen in 3 seconds…", Toast.LENGTH_LONG).show()
+        moveTaskToBack(true)
+        handler.postDelayed({
+            svc.captureFrame { frame ->
+                val diag = ImageMatcher.Diag()
+                val m = frame?.let { ImageMatcher.find(it, tmp, 0f, diag) }
+                testResult = { showTestResult(tmp, frame != null, m, diag) }
+                startActivity(
+                    android.content.Intent(this, ImageStepActivity::class.java)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+        }, 3000)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        testResult?.let { testResult = null; it() }
+    }
+
+    private fun showTestResult(tmp: ImageStep, captured: Boolean, m: ImageMatcher.Match?, d: ImageMatcher.Diag) {
+        val need = (tmp.threshold * 100).toInt()
+        val best = (d.best * 100).toInt().coerceAtLeast(0)
+        val b = AlertDialog.Builder(this, Ui.dialogTheme(p))
+        when {
+            !captured -> b.setTitle("Couldn't capture the screen")
+                .setMessage("Connect Shizuku, or use Android 11 or later.")
+                .setPositiveButton("OK", null)
+            m != null -> b.setTitle("Found · ${(m.score * 100).toInt()}%")
+                .setMessage(
+                    if (tmp.action == ImageStep.ACTION_TAP) "It will be tapped at ${m.x}, ${m.y}."
+                    else "Found at ${m.x}, ${m.y}."
+                )
+                .setPositiveButton("OK", null)
+            d.colorRejected -> b.setTitle("Shape matches, colors don't")
+                .setMessage("The shape matched $best%, but the colors are different. The button may look disabled on this screen.")
+                .setPositiveButton("OK", null)
+            best >= 50 -> b.setTitle("Not found")
+                .setMessage("Closest match was $best%, below the $need% needed." +
+                    if (!tmp.anywhere) " It might also be outside the search area." else "")
+                .setPositiveButton("Set match to ${best - 3}%") { _, _ ->
+                    step.threshold = (best - 3).coerceIn(50, 99) / 100f
+                    refresh()
+                }
+                .setNeutralButton(if (tmp.anywhere) "OK" else "Search anywhere") { _, _ ->
+                    if (!tmp.anywhere) { step.anywhere = true; refresh() }
+                }
+            else -> b.setTitle("Not found")
+                .setMessage("Nothing similar is on the screen. Make sure the game shows the same screen as the screenshot.")
+                .setPositiveButton("OK", null)
+        }
+        b.show()
     }
 }
 
@@ -261,214 +338,4 @@ fun templateBitmap(s: ImageStep): Bitmap? {
     if (!s.ready) return null
     val px = IntArray(s.tpl.size) { s.tpl[it] or (0xFF shl 24) }
     return Bitmap.createBitmap(px, s.tw, s.th, Bitmap.Config.ARGB_8888)
-}
-
-/**
- * Screenshot with a draggable selection rectangle (bitmap coordinates).
- * One finger edits the selection; two fingers pinch to zoom and move the picture;
- * double-tap zooms in on that spot (or back out).
- */
-@SuppressLint("ViewConstructor")
-class CropView(ctx: Context, private val bmp: Bitmap, initial: Rect, private val accent: Int, private val maxHeight: Int) : View(ctx) {
-    private val sel = RectF(initial)
-    private val density = resources.displayMetrics.density
-
-    // view = offset + bitmap * scale
-    private var fit = 1f
-    private var zoom = 1f
-    private var ox = 0f
-    private var oy = 0f
-    private val scale get() = fit * zoom
-
-    /** Called whenever the selection changes. */
-    var onChange: ((Rect) -> Unit)? = null
-
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val shade = Paint().apply { color = 0x99000000.toInt() }
-    private val frame = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 2f * density
-        color = accent
-    }
-    private val handle = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = accent }
-    private val touchSlop = 26 * density
-
-    private enum class Mode { NONE, MOVE, NEW, TL, TR, BL, BR, GESTURE }
-    private var mode = Mode.NONE
-    private var lastX = 0f
-    private var lastY = 0f
-    private var startBX = 0f
-    private var startBY = 0f
-    private var lastFocusX = 0f
-    private var lastFocusY = 0f
-
-    private val scaler = android.view.ScaleGestureDetector(ctx, object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
-        override fun onScale(d: android.view.ScaleGestureDetector): Boolean {
-            zoomAt(zoom * d.scaleFactor, d.focusX, d.focusY)
-            return true
-        }
-    })
-
-    private val taps = android.view.GestureDetector(ctx, object : android.view.GestureDetector.SimpleOnGestureListener() {
-        override fun onDoubleTap(e: MotionEvent): Boolean {
-            if (zoom > 1.5f) resetZoom() else zoomAt(4f, e.x, e.y)
-            return true
-        }
-    })
-
-    fun selection(): Rect = Rect(
-        sel.left.toInt().coerceIn(0, bmp.width), sel.top.toInt().coerceIn(0, bmp.height),
-        sel.right.toInt().coerceIn(0, bmp.width), sel.bottom.toInt().coerceIn(0, bmp.height),
-    )
-
-    fun zoomBy(f: Float) = zoomAt(zoom * f, width / 2f, height / 2f)
-
-    /** Zoom so the selection fills most of the view. */
-    fun zoomToSelection() {
-        val z = (min(width / (sel.width() * fit), height / (sel.height() * fit)) * 0.5f).coerceIn(1f, 10f)
-        zoom = z
-        ox = width / 2f - sel.centerX() * scale
-        oy = height / 2f - sel.centerY() * scale
-        clamp()
-        invalidate()
-    }
-
-    fun resetZoom() {
-        zoom = 1f
-        center()
-        invalidate()
-    }
-
-    private fun center() {
-        ox = (width - bmp.width * scale) / 2
-        oy = (height - bmp.height * scale) / 2
-    }
-
-    private fun zoomAt(newZoom: Float, fx: Float, fy: Float) {
-        val z = newZoom.coerceIn(1f, 10f)
-        // keep the bitmap point under the focus fixed
-        val bx = (fx - ox) / scale
-        val by = (fy - oy) / scale
-        zoom = z
-        ox = fx - bx * scale
-        oy = fy - by * scale
-        clamp()
-        invalidate()
-    }
-
-    /** Keep the picture covering the view (or centered when smaller). */
-    private fun clamp() {
-        val w = bmp.width * scale
-        val h = bmp.height * scale
-        ox = if (w <= width) (width - w) / 2 else ox.coerceIn(width - w, 0f)
-        oy = if (h <= height) (height - h) / 2 else oy.coerceIn(height - h, 0f)
-    }
-
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val w = MeasureSpec.getSize(widthMeasureSpec)
-        val h = min(maxHeight, (w.toLong() * bmp.height / bmp.width).toInt())
-        setMeasuredDimension(w, h)
-    }
-
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        fit = min(w.toFloat() / bmp.width, h.toFloat() / bmp.height)
-        center()
-        clamp()
-    }
-
-    private fun vx(x: Float) = ox + x * scale
-    private fun vy(y: Float) = oy + y * scale
-    private fun bx(x: Float) = ((x - ox) / scale).coerceIn(0f, bmp.width.toFloat())
-    private fun by(y: Float) = ((y - oy) / scale).coerceIn(0f, bmp.height.toFloat())
-
-    private val dst = RectF()
-
-    override fun onDraw(c: Canvas) {
-        dst.set(ox, oy, ox + bmp.width * scale, oy + bmp.height * scale)
-        c.save()
-        c.clipRect(0f, 0f, width.toFloat(), height.toFloat())
-        c.drawBitmap(bmp, null, dst, paint)
-        val l = vx(sel.left); val t = vy(sel.top); val r = vx(sel.right); val b = vy(sel.bottom)
-        c.drawRect(dst.left, dst.top, dst.right, t, shade)
-        c.drawRect(dst.left, b, dst.right, dst.bottom, shade)
-        c.drawRect(dst.left, t, l, b, shade)
-        c.drawRect(r, t, dst.right, b, shade)
-        c.drawRect(l, t, r, b, frame)
-        val hr = 5.5f * density
-        for ((x, y) in listOf(l to t, r to t, l to b, r to b)) c.drawCircle(x, y, hr, handle)
-        c.restore()
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    override fun onTouchEvent(e: MotionEvent): Boolean {
-        parent?.requestDisallowInterceptTouchEvent(true)
-        taps.onTouchEvent(e)
-        scaler.onTouchEvent(e)
-
-        // Two fingers: zoom and move the picture, never the selection.
-        if (e.pointerCount >= 2) {
-            val fx = (e.getX(0) + e.getX(1)) / 2
-            val fy = (e.getY(0) + e.getY(1)) / 2
-            if (mode != Mode.GESTURE) {
-                mode = Mode.GESTURE
-            } else {
-                ox += fx - lastFocusX
-                oy += fy - lastFocusY
-                clamp()
-                invalidate()
-            }
-            lastFocusX = fx; lastFocusY = fy
-            return true
-        }
-
-        when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                val l = vx(sel.left); val t = vy(sel.top); val r = vx(sel.right); val b = vy(sel.bottom)
-                fun near(x: Float, y: Float) = abs(e.x - x) < touchSlop && abs(e.y - y) < touchSlop
-                mode = when {
-                    near(l, t) -> Mode.TL
-                    near(r, t) -> Mode.TR
-                    near(l, b) -> Mode.BL
-                    near(r, b) -> Mode.BR
-                    e.x in l..r && e.y in t..b -> Mode.MOVE
-                    else -> Mode.NEW
-                }
-                val x = bx(e.x); val y = by(e.y)
-                startBX = x; startBY = y
-                lastX = x; lastY = y
-            }
-            MotionEvent.ACTION_MOVE -> {
-                if (mode == Mode.GESTURE || mode == Mode.NONE) return true
-                val x = bx(e.x); val y = by(e.y)
-                val minSide = 16f
-                when (mode) {
-                    Mode.MOVE -> {
-                        val dx = (x - lastX).coerceIn(-sel.left, bmp.width - sel.right)
-                        val dy = (y - lastY).coerceIn(-sel.top, bmp.height - sel.bottom)
-                        sel.offset(dx, dy)
-                    }
-                    Mode.NEW -> {
-                        // Start a new box only after a real drag, so a tap doesn't wipe the selection.
-                        if (abs(x - startBX) * scale > 8 * density || abs(y - startBY) * scale > 8 * density) {
-                            sel.set(min(startBX, x), min(startBY, y), max(startBX, x), max(startBY, y))
-                        }
-                    }
-                    Mode.TL -> { sel.left = min(x, sel.right - minSide); sel.top = min(y, sel.bottom - minSide) }
-                    Mode.TR -> { sel.right = max(x, sel.left + minSide); sel.top = min(y, sel.bottom - minSide) }
-                    Mode.BL -> { sel.left = min(x, sel.right - minSide); sel.bottom = max(y, sel.top + minSide) }
-                    Mode.BR -> { sel.right = max(x, sel.left + minSide); sel.bottom = max(y, sel.top + minSide) }
-                    else -> {}
-                }
-                lastX = x; lastY = y
-                invalidate()
-                onChange?.invoke(selection())
-            }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                parent?.requestDisallowInterceptTouchEvent(false)
-                if (mode != Mode.GESTURE) onChange?.invoke(selection())
-                mode = Mode.NONE
-            }
-        }
-        return true
-    }
 }

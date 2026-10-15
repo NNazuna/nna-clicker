@@ -79,7 +79,8 @@ class MainActivity : Activity() {
             setPadding(k.dp(4f), 0, k.dp(4f), 0)
         }
         titleRow.addView(k.text("NNA Clicker", 32f, 2), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        titleRow.addView(k.text("v${BuildConfig.VERSION_NAME}", 14f, 1, p.muted).apply { setPadding(0, 0, 0, k.dp(5f)) })
+        titleRow.addView(k.textButton("Setup", p.play) { startActivity(Intent(this, SetupActivity::class.java)) })
+        titleRow.addView(k.text("v${BuildConfig.VERSION_NAME}", 14f, 1, p.muted).apply { setPadding(k.dp(4f), 0, 0, k.dp(5f)) })
         root.addView(titleRow)
         root.addView(View(this), LinearLayout.LayoutParams(1, k.dp(10f)))
 
@@ -232,6 +233,11 @@ class MainActivity : Activity() {
         }
         root.addView(play)
 
+
+        // First launch: walk through the switches before anything else.
+        if (savedInstanceState == null && !storage.setupSeen && RecorderService.instance == null) {
+            startActivity(Intent(this, SetupActivity::class.java))
+        }
 
         setContentView(ScrollView(this).apply {
             setBackgroundColor(p.bg)

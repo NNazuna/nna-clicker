@@ -25,6 +25,11 @@ class Storage(context: Context) {
         File(dir, "${r.id}.json").writeText(r.toJson().toString())
     }
 
+    /** The setup guide was finished or dismissed. */
+    var setupSeen: Boolean
+        get() = prefs.getBoolean("setup_seen", false)
+        set(v) = prefs.edit().putBoolean("setup_seen", v).apply()
+
     // ---------- screenshots for image steps ----------
 
     private val snapDir = File(context.filesDir, "snaps").apply { mkdirs() }

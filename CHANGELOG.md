@@ -3,6 +3,20 @@
 All notable changes to NNA Clicker are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-10-15
+
+### Added
+- Setup guide on first launch: restricted settings, accessibility, Shizuku, and the panel, each with its status and a button to fix it. Open it again from **Setup** on the main screen.
+- **Test on screen** for image steps: checks the current box on the live game screen and reports the match, the closest score, or a color mismatch, with one-tap fixes.
+- Recording list on the floating panel: switch macros without opening the app.
+- Shrink the panel to a small bubble (long-press the grip or use the panel menu); tap the bubble to expand. Its color shows recording or playing.
+- Add **Tap** and **Swipe** steps by placing points on a screenshot, at the end or after any step.
+- **Edit position** of an existing tap, hold, or swipe, with zoom and exact coordinates.
+
+### Changed
+- Image matching keeps fine details (text, stripes) at the coarse search level and also searches on a half-cell shifted grid, so small or patterned targets are found more reliably.
+- Shared zoom view for cropping and point editing.
+
 ## [1.2.0] - 2026-10-13
 
 ### Added

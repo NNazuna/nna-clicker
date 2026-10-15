@@ -22,9 +22,17 @@ object ImageMatcher {
     /** Largest template side allowed at the coarsest pyramid level. */
     private const val COARSE_MAX_SIDE = 24
     private const val COARSE_MIN_SIDE = 4
-    private const val CANDIDATES = 6
+    private const val CANDIDATES = 8
     /** Mean (per 4x4 cell) of the largest channel difference allowed, 0..255. */
     private const val MAX_COLOR_DIFF = 40f
+
+    /** What the search saw, for the "Test" button. */
+    class Diag {
+        /** Best similarity of any candidate, before the color check (-1 when nothing was compared). */
+        var best = -1f
+        /** The best candidate looked right but its colors were too different. */
+        var colorRejected = false
+    }
 
     class Match(
         /** Center of the match in full-resolution screen pixels. */
@@ -191,25 +199,50 @@ object ImageMatcher {
         return if (count == 0) 0f else total / count
     }
 
+    /** Pyramid phase alignment; the region origin keeps the template's original spot on this grid. */
+    private const val ALIGN = 16
+
     /**
      * Search area in frame coordinates: around the original spot (a margin of about
-     * a quarter of the short screen side), or the whole frame.
+     * a quarter of the short screen side), or the whole frame. The origin is aligned so the
+     * original spot falls on the pyramid grid, which keeps the coarse search exact when the
+     * target hasn't moved.
      */
     fun region(step: ImageStep, f: ScreenFrame): IntArray {
         val sameScreen = step.screenW / SCALE == f.w && step.screenH / SCALE == f.h
-        if (step.anywhere || !sameScreen) return intArrayOf(0, 0, f.w, f.h)
+        val tx = step.x / SCALE
+        val ty = step.y / SCALE
+        fun align(raw: Int, target: Int): Int {
+            var o = raw - Math.floorMod(target - raw, ALIGN)
+            while (o < 0) o += ALIGN
+            return o
+        }
+        if (step.anywhere || !sameScreen) {
+            return intArrayOf(align(0, tx).coerceAtMost(f.w), align(0, ty).coerceAtMost(f.h), f.w, f.h)
+        }
         val m = min(f.w, f.h) / 4 + max(step.tw, step.th) / 2
-        val x0 = (step.x / SCALE - m).coerceIn(0, f.w)
-        val y0 = (step.y / SCALE - m).coerceIn(0, f.h)
-        val x1 = (step.x / SCALE + step.tw + m).coerceIn(0, f.w)
-        val y1 = (step.y / SCALE + step.th + m).coerceIn(0, f.h)
+        val x0 = align((tx - m).coerceIn(0, f.w), tx).coerceAtMost(f.w)
+        val y0 = align((ty - m).coerceIn(0, f.h), ty).coerceAtMost(f.h)
+        val x1 = (tx + step.tw + m).coerceIn(0, f.w)
+        val y1 = (ty + step.th + m).coerceIn(0, f.h)
         return intArrayOf(x0, y0, x1, y1)
     }
 
-    fun find(f: ScreenFrame, step: ImageStep, dim: Float = 0f): Match? =
-        find(f, step.tpl, step.tw, step.th, region(step, f), step.threshold, dim)
+    fun find(f: ScreenFrame, step: ImageStep, dim: Float = 0f, diag: Diag? = null): Match? =
+        find(f, step.tpl, step.tw, step.th, region(step, f), step.threshold, dim, diag)
 
-    fun find(f: ScreenFrame, tpl: IntArray, tw: Int, th: Int, region: IntArray, threshold: Float, dim: Float = 0f): Match? {
+    private fun crop(g: G, x0: Int, y0: Int): G {
+        val w = g.w - x0
+        val h = g.h - y0
+        val v = FloatArray(max(0, w * h))
+        for (y in 0 until h) System.arraycopy(g.v, (y + y0) * g.w + x0, v, y * w, w)
+        return G(w, h, v)
+    }
+
+    fun find(
+        f: ScreenFrame, tpl: IntArray, tw: Int, th: Int, region: IntArray, threshold: Float,
+        dim: Float = 0f, diag: Diag? = null,
+    ): Match? {
         val rx0 = region[0]; val ry0 = region[1]
         val rw = region[2] - rx0; val rh = region[3] - ry0
         if (tw < 2 || th < 2 || tw > rw || th > rh) return null
@@ -217,49 +250,59 @@ object ImageMatcher {
         val img = grayOf(f.rgb, f.w, rx0, ry0, rw, rh)
         val t = G(tw, th, FloatArray(tw * th) { gray(tpl[it]).toFloat() })
 
-        // Coarsest level: a power of two that keeps the template small but still detailed.
-        var c = 1
-        while (max(tw, th) / c > COARSE_MAX_SIDE && min(tw, th) / (c * 2) >= COARSE_MIN_SIDE) c *= 2
-
         // Pyramid levels are built once and shared by all candidates.
         val imgLv = HashMap<Int, G>()
         val tplLv = HashMap<Int, G>()
         fun il(l: Int) = imgLv.getOrPut(l) { shrink(img, l) }
         fun tl(l: Int) = tplLv.getOrPut(l) { shrink(t, l) }
+        fun std(g: G) = stats(g).second / sqrt(g.v.size.toFloat())
 
-        // Coarse scan
-        val ic = il(c)
+        // Coarsest level: shrink while the template is still big AND keeps most of its detail
+        // (fine patterns such as text or stripes blur away when shrunk too far).
+        var c = 1
+        val detail = std(t)
+        while (max(tw, th) / c > COARSE_MAX_SIDE && min(tw, th) / (c * 2) >= COARSE_MIN_SIDE &&
+            std(tl(c * 2)) >= 0.5f * detail
+        ) c *= 2
         val tc = tl(c)
-        val map = scan(ic, tc)
-        if (map.isEmpty()) return null
 
-        // Top candidates with non-maximum suppression
+        // Coarse scan. Shrinking loses position phase, so a target that moved is also searched
+        // on a grid shifted by half a cell. Candidates are kept in full (level 1) coordinates.
         val cands = ArrayList<IntArray>()
-        val sup = max(1, min(tc.w, tc.h) / 2)
-        val taken = Array(map.size) { BooleanArray(map[0].size) }
-        repeat(CANDIDATES) {
-            var best = -2f; var bx = -1; var by = -1
-            for (y in map.indices) for (x in map[y].indices) {
-                if (!taken[y][x] && map[y][x] > best) { best = map[y][x]; bx = x; by = y }
+        val phases = if (c >= 2) intArrayOf(0, c / 2) else intArrayOf(0)
+        for (ph in phases) {
+            val ic = if (ph == 0) il(c) else shrink(crop(img, ph, ph), c)
+            val map = scan(ic, tc)
+            if (map.isEmpty()) continue
+            val sup = max(1, min(tc.w, tc.h) / 4)
+            val taken = Array(map.size) { BooleanArray(map[0].size) }
+            var first = true
+            repeat(CANDIDATES / phases.size) {
+                var best = -2f; var bx = -1; var by = -1
+                for (y in map.indices) for (x in map[y].indices) {
+                    if (!taken[y][x] && map[y][x] > best) { best = map[y][x]; bx = x; by = y }
+                }
+                if (bx < 0 || (!first && best < threshold - 0.25f)) return@repeat
+                first = false
+                cands.add(intArrayOf(bx * c + ph, by * c + ph))
+                for (y in max(0, by - sup)..min(map.size - 1, by + sup))
+                    for (x in max(0, bx - sup)..min(map[0].size - 1, bx + sup)) taken[y][x] = true
             }
-            if (bx < 0 || (cands.isNotEmpty() && best < threshold - 0.25f)) return@repeat
-            cands.add(intArrayOf(bx, by))
-            for (y in max(0, by - sup)..min(map.size - 1, by + sup))
-                for (x in max(0, bx - sup)..min(map[0].size - 1, bx + sup)) taken[y][x] = true
         }
+        if (cands.isEmpty()) return null
 
-        // Refine each candidate down the pyramid, then check color.
+        // Refine each candidate down the pyramid (from half the coarse level), then check color.
         var bestMatch: Match? = null
         for (cand in cands) {
-            var px = cand[0]; var py = cand[1]
-            var level = c
+            var level = max(1, c / 2)
+            var px = cand[0] / level; var py = cand[1] / level
             var score: Float
             while (true) {
                 val iL = il(level)
                 val tL = tl(level)
                 val (tm, tn) = stats(tL)
                 var bs = -2f; var bx = px; var by = py
-                for (dy in -2..2) for (dx in -2..2) {
+                for (dy in -3..3) for (dx in -3..3) {
                     val s = ncc(iL, tL, tm, tn, px + dx, py + dy)
                     if (s > bs) { bs = s; bx = px + dx; by = py + dy }
                 }
@@ -268,9 +311,13 @@ object ImageMatcher {
                 level /= 2
                 px *= 2; py *= 2
             }
-            if (score < threshold) continue
             val fx = rx0 + px; val fy = ry0 + py
-            if (colorDiff(f, fx, fy, tpl, tw, th, dim) > MAX_COLOR_DIFF) continue
+            val colorBad = colorDiff(f, fx, fy, tpl, tw, th, dim) > MAX_COLOR_DIFF
+            if (diag != null && score > diag.best) {
+                diag.best = score
+                diag.colorRejected = colorBad && score >= threshold
+            }
+            if (score < threshold || colorBad) continue
             if (bestMatch == null || score > bestMatch.score) {
                 bestMatch = Match((fx + tw / 2) * SCALE, (fy + th / 2) * SCALE, score)
             }

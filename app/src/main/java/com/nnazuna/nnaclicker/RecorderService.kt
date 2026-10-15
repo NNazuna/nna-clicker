@@ -66,6 +66,11 @@ class RecorderService : AccessibilityService() {
     private lateinit var statusDot: View
     private lateinit var status: TextView
     private var pulse: ObjectAnimator? = null
+    private lateinit var handle: ImageView
+    /** Panel shrunk to a small bubble. */
+    private var minimized = false
+    /** Recording list opened from the panel. */
+    private var menuView: View? = null
     /** Lapisan gelap saat memutar (tidak menangkap sentuhan) + menjaga layar tetap menyala. */
     private var dimView: View? = null
     private var playStartedAt = 0L
@@ -223,7 +228,7 @@ class RecorderService : AccessibilityService() {
             root.addView(this, LinearLayout.LayoutParams(dp(44f), dp(44f)))
         }
 
-        val handle = ImageView(this).apply {
+        handle = ImageView(this).apply {
             setImageDrawable(IconDrawable(Icon.GRIP, 0x8CFFFFFF.toInt(), dp(22f)))
             scaleType = ImageView.ScaleType.CENTER
         }
@@ -254,7 +259,7 @@ class RecorderService : AccessibilityService() {
         statusBox.addView(status)
         root.addView(statusBox)
 
-        btnApp = iconButton { openApp() }
+        btnApp = iconButton { toggleMenu() }
         btnApp.setImageDrawable(IconDrawable(Icon.LIST, 0xCCFFFFFF.toInt(), dp(22f)))
         btnClose = iconButton { hidePanel() }
         btnClose.setImageDrawable(IconDrawable(Icon.CLOSE, 0x99FFFFFF.toInt(), dp(20f)))
@@ -268,17 +273,32 @@ class RecorderService : AccessibilityService() {
             y = dp(160f)
         }
 
-        // Geser panel dengan memegang pegangan titik-titik
+        // Drag the grip to move the panel. Tap the bubble to expand; long-press the grip to shrink.
         var startX = 0; var startY = 0; var touchX = 0f; var touchY = 0f
+        var dragged = false
+        val longPress = Runnable { if (!dragged) { setMinimized(!minimized) ; dragged = true } }
         handle.setOnTouchListener { _, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     startX = params.x; startY = params.y; touchX = e.rawX; touchY = e.rawY
+                    dragged = false
+                    handler.postDelayed(longPress, 500)
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = startX + (e.rawX - touchX).toInt()
-                    params.y = startY + (e.rawY - touchY).toInt()
-                    panel?.let { wm.updateViewLayout(it, params) }
+                    if (!dragged && Math.hypot((e.rawX - touchX).toDouble(), (e.rawY - touchY).toDouble()) > dp(8f)) {
+                        dragged = true
+                        handler.removeCallbacks(longPress)
+                        closeMenu()
+                    }
+                    if (dragged) {
+                        params.x = startX + (e.rawX - touchX).toInt()
+                        params.y = startY + (e.rawY - touchY).toInt()
+                        panel?.let { wm.updateViewLayout(it, params) }
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    handler.removeCallbacks(longPress)
+                    if (!dragged && e.actionMasked == MotionEvent.ACTION_UP && minimized) setMinimized(false)
                 }
             }
             true
@@ -293,6 +313,7 @@ class RecorderService : AccessibilityService() {
     }
 
     fun hidePanel() {
+        closeMenu()
         stopAll()
         panel?.let { runCatching { wm.removeView(it) } }
         panel = null
@@ -325,6 +346,19 @@ class RecorderService : AccessibilityService() {
         if (panel == null) return
         pulse?.cancel()
         statusDot.alpha = 1f
+        if (minimized) {
+            for (v in listOf(btnRecord, btnPlay, btnSnap, btnApp, btnClose, statusBox)) v.visibility = View.GONE
+            val color = when (state) {
+                State.RECORDING -> COLOR_REC
+                State.PLAYING -> COLOR_PLAY
+                State.IDLE -> 0xCCFFFFFF.toInt()
+            }
+            handle.setImageDrawable(IconDrawable(Icon.RECORD, color, dp(26f)))
+            handle.layoutParams = LinearLayout.LayoutParams(dp(40f), dp(40f))
+            return
+        }
+        handle.setImageDrawable(IconDrawable(Icon.GRIP, 0x8CFFFFFF.toInt(), dp(22f)))
+        handle.layoutParams = LinearLayout.LayoutParams(dp(30f), dp(44f))
         when (state) {
             State.IDLE -> {
                 setIcon(btnRecord, Icon.RECORD, COLOR_REC); btnRecord.visibility = View.VISIBLE
@@ -361,6 +395,130 @@ class RecorderService : AccessibilityService() {
         }
     }
 
+    private fun setMinimized(on: Boolean) {
+        minimized = on
+        closeMenu()
+        updatePanel()
+    }
+
+    // ---------- recording list on the panel ----------
+
+    private fun toggleMenu() {
+        if (menuView != null) closeMenu() else openMenu()
+    }
+
+    private fun closeMenu() {
+        menuView?.let { runCatching { wm.removeView(it) } }
+        menuView = null
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun openMenu() {
+        val anchor = panel ?: return
+        val anchorParams = panelParams ?: return
+        val recs = storage.list()
+        val selected = storage.selected()?.id
+
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(6f), dp(8f), dp(6f), dp(6f))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(18f).toFloat()
+                setColor(0xF21C2220.toInt())
+                setStroke(dp(1f), 0x33FFFFFF)
+            }
+        }
+        fun row(label: String, color: Int, bold: Boolean, onClick: (() -> Unit)?) = TextView(this).apply {
+            text = label
+            setTextColor(color)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            typeface = Ui.font(this@RecorderService, if (bold) 2 else 1)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
+            if (onClick != null) {
+                background = RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(0x33FFFFFF), null,
+                    GradientDrawable().apply { cornerRadius = dp(10f).toFloat(); setColor(0xFFFFFFFF.toInt()) },
+                )
+                setOnClickListener { onClick() }
+            }
+        }
+
+        box.addView(row("Recordings", 0x99FFFFFF.toInt(), false, null).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setPadding(dp(12f), dp(2f), dp(12f), dp(4f))
+        })
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        if (recs.isEmpty()) list.addView(row("No recordings yet", 0x99FFFFFF.toInt(), false, null))
+        for (r in recs) {
+            val on = r.id == selected
+            list.addView(row((if (on) "✓  " else "     ") + r.name, if (on) COLOR_PLAY else 0xFFF1F4F2.toInt(), on) {
+                storage.selectedId = r.id
+                closeMenu()
+                toast("Selected: ${r.name}")
+                onChanged?.invoke()
+            })
+        }
+        val scroll = android.widget.ScrollView(this).apply { addView(list) }
+        val maxRows = 6
+        box.addView(scroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            if (recs.size > maxRows) dp(44f * maxRows) else LinearLayout.LayoutParams.WRAP_CONTENT,
+        ))
+        box.addView(View(this).apply { setBackgroundColor(0x33FFFFFF) },
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1f)).apply { setMargins(dp(8f), dp(4f), dp(8f), dp(4f)) })
+        box.addView(row("Open NNA Clicker", 0xFFF1F4F2.toInt(), false) { closeMenu(); openApp() })
+        box.addView(row("Shrink panel", 0xFFF1F4F2.toInt(), false) { setMinimized(true) })
+
+        val size = screenSize()
+        val w = minOf(dp(280f), size.x - dp(16f))
+        val params = overlayParams(
+            w, WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+        )
+        box.measure(
+            View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(size.y, View.MeasureSpec.AT_MOST),
+        )
+        params.x = anchorParams.x.coerceIn(0, maxOf(0, size.x - w))
+        val below = anchorParams.y + anchor.height + dp(6f)
+        params.y = if (below + box.measuredHeight <= size.y) below
+        else maxOf(0, anchorParams.y - box.measuredHeight - dp(6f))
+        box.setOnTouchListener { _, e ->
+            if (e.actionMasked == MotionEvent.ACTION_OUTSIDE) { closeMenu(); true } else false
+        }
+        menuView = box
+        wm.addView(box, params)
+    }
+
+    /** Screen as a half-resolution frame, with the panel hidden. Used by the image step "Test" button. */
+    fun captureFrame(cb: (ScreenFrame?) -> Unit) {
+        closeMenu()
+        panel?.visibility = View.INVISIBLE
+        handler.postDelayed({
+            val done = { f: ScreenFrame? -> handler.post { panel?.visibility = View.VISIBLE; cb(f) } }
+            val backend = if (useShizukuNow()) ShizukuBridge.backend else null
+            when {
+                backend != null -> Thread {
+                    val png = try { backend.snap() } catch (e: Exception) { null }
+                    val f = png?.let { bytes ->
+                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let { b ->
+                            val px = IntArray(b.width * b.height)
+                            b.getPixels(px, 0, b.width, 0, 0, b.width, b.height)
+                            ImageMatcher.downscale(px, b.width, b.height).also { b.recycle() }
+                        }
+                    }
+                    if (f == null && Build.VERSION.SDK_INT >= 30) A11yCapture.frame(this) { done(it) } else done(f)
+                }.start()
+                Build.VERSION.SDK_INT >= 30 -> A11yCapture.frame(this) { done(it) }
+                else -> done(null)
+            }
+        }, 150)
+    }
+
     private fun openApp() {
         startActivity(
             Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -368,6 +526,7 @@ class RecorderService : AccessibilityService() {
     }
 
     private fun onRecordPressed() {
+        closeMenu()
         when (state) {
             State.IDLE -> startRecording()
             State.RECORDING -> stopRecording()
@@ -376,6 +535,7 @@ class RecorderService : AccessibilityService() {
     }
 
     private fun onPlayPressed() {
+        closeMenu()
         when (state) {
             State.IDLE -> startPlaying()
             State.PLAYING -> stopPlaying()

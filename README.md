@@ -43,16 +43,17 @@ The app falls back to the Standard engine automatically if Shizuku is unavailabl
 - Manage saved screenshots and delete the ones you no longer need
 - Search near the original spot (faster) or anywhere on screen
 - Time limit per step, with stop or skip when the image isn't found
+- Test an image step on the live screen and see how well it matches
 - On-device matching with a color check; nothing is uploaded
 
 **Controls**
-- Draggable floating panel with record, play, and stop
+- Draggable floating panel with record, play, and stop; switch recordings from the panel or shrink it to a bubble
 - Quick Settings tile to show or hide the panel
 - Volume Down stops recording or playback at any time
 - Optional screen dimming during playback; the screen stays on while a recording plays
 
 **Editing and sharing**
-- Step editor: reorder steps, change the delay before any step, set all delays at once, duplicate or delete steps
+- Step editor: add taps and swipes on a screenshot, edit positions, reorder steps, change delays, duplicate or delete steps
 - Import and export recordings as JSON
 
 **Interface**
@@ -78,7 +79,7 @@ Image steps use Shizuku's screen capture when it is connected. Without Shizuku t
 
 ## Installation
 
-1. Download `NNA-Clicker.apk` from the [latest release](../../releases/latest) and install it.
+1. Download `NNA-Clicker.apk` from the [latest release](../../releases/latest) and install it. On first launch, a setup guide walks through the steps below.
 2. On Android 13 and later, open **Settings › Apps › NNA Clicker**, tap **⋮**, and choose **Allow restricted settings**.
 3. Open **Settings › Accessibility › NNA Clicker** and turn it on.
 4. *(Optional)* Start Shizuku, then enable **Shizuku** in NNA Clicker and grant the permission.
