@@ -3,7 +3,7 @@
 All notable changes to NNA Clicker are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.0.0] - 2026-10-15
 
 ### Added
 - Flow steps: **Label**, **Go to label**, **Wait**, and **Stop playback**. Add them with **Add step** in the editor.
@@ -19,6 +19,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 - Both engines run recordings through the same step program, so jumps and branches behave the same with and without Shizuku.
+
+### Fixed
+- Importing a recording kept only taps and swipes; image steps are now kept too.
 
 ## [1.3.0] - 2026-10-15
 
