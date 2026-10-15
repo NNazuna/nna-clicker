@@ -154,14 +154,15 @@ class ImageStep(
 
 /**
  * Control step: a named [LABEL], a [GOTO] that jumps to a label (optionally a limited number
- * of times, which makes a loop), a random [WAIT], or [STOP] to end playback.
+ * of times, which makes a loop), a random [WAIT], [STOP] to end playback, a system [KEY]
+ * (back, home, recent apps), or [LAUNCH] to open an app.
  */
 class FlowStep(
     override var at: Long,
     var kind: Int,
-    /** LABEL: its own id. GOTO: the target label id. */
+    /** LABEL: its own id. GOTO: the target label id. KEY: [KEY_BACK], [KEY_HOME] or [KEY_RECENTS]. LAUNCH: package name. */
     var ref: String = "",
-    /** LABEL: display name. */
+    /** LABEL: display name. LAUNCH: app name. */
     var name: String = "",
     /** GOTO: how many times to jump before continuing (0 = always). */
     var count: Int = 0,
@@ -186,6 +187,18 @@ class FlowStep(
         const val GOTO = 1
         const val WAIT = 2
         const val STOP = 3
+        const val KEY = 4
+        const val LAUNCH = 5
+
+        const val KEY_BACK = "back"
+        const val KEY_HOME = "home"
+        const val KEY_RECENTS = "recents"
+
+        fun keyName(ref: String) = when (ref) {
+            KEY_HOME -> "Home"
+            KEY_RECENTS -> "Recent apps"
+            else -> "Back"
+        }
 
         fun newId(): String = java.util.UUID.randomUUID().toString().take(8)
 
@@ -211,6 +224,9 @@ class Recording(
 ) {
     /** Lapisan gelap saat diputar (0..1), dipakai untuk mengoreksi warna saat mencocokkan gambar. Tidak disimpan. */
     var dim: Float = 0f
+
+    /** Play from the first step at or after this time (first loop only); -1 = from the start. Not saved. */
+    var startAt: Long = -1
 
     /** Semua langkah urut waktu; pada waktu yang sama: label, langkah gambar/alur, lalu gerakan. */
     fun steps(): List<Step> =
@@ -242,6 +258,7 @@ class Recording(
         put("name", name)
         put("created", created)
         if (dim > 0f) put("dim", dim.toDouble())
+        if (startAt >= 0) put("startAt", startAt)
         put("gestures", JSONArray().apply {
             for (g in gestures) {
                 put(JSONObject().apply {
@@ -308,7 +325,10 @@ class Recording(
                 gs,
                 imgs,
                 fl,
-            ).also { it.dim = o.optDouble("dim", 0.0).toFloat() }
+            ).also {
+                it.dim = o.optDouble("dim", 0.0).toFloat()
+                it.startAt = o.optLong("startAt", -1)
+            }
         }
     }
 }

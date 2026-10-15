@@ -51,6 +51,12 @@ The app falls back to the Standard engine automatically if Shizuku is unavailabl
 - If / else with images: go to a label, continue, skip, or stop when an image is found or not found
 - **Check once** image steps that branch without waiting
 - Random waits and a **Stop playback** step
+- **Back / Home / Recent apps** and **Open app** steps
+- **Play from here** to test a recording from any step
+
+**Quick start**
+- **Auto clicker**: tap one spot or repeat a swipe at a set interval, without recording
+- **Alert when finished**: vibrate and sound when playback ends or stops with an error
 
 **Controls**
 - Draggable floating panel with record, play, and stop; switch recordings from the panel or shrink it to a bubble
@@ -84,6 +90,8 @@ Add these with **Add step** in the editor:
 | **Go to label** | Jumps to a label, every time or a set number of times, then continues |
 | **Wait** | Waits a fixed or random time |
 | **Stop playback** | Ends playback |
+| **Back / Home / Recent apps** | Presses a system button |
+| **Open app** | Opens an app, or brings it to the front |
 
 Image steps can branch too: under **If found** and **If not found**, choose the next step, a label, or (when not found) stop. Set **Give up after** to 0 to check the screen once without waiting.
 

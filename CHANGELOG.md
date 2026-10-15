@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Check once** for image steps (give up after 0 s): look at the screen once and branch without waiting.
 - Random waits: wait a random time between two values.
 - The panel shows the current step while playing.
+- **Auto clicker** on the main screen: pick a spot (or a swipe) and how often, and it repeats until you stop it. No recording needed.
+- **Back / Home / Recent apps** steps and an **Open app** step, so a macro can switch apps and recover from wrong screens.
+- **Play from here** in the step menu: test a recording from any step without running it all.
+- **Alert when finished** (Playback setting): vibrate and sound when playback ends on its own or stops with an error.
 
 ### Changed
 - Both engines run recordings through the same step program, so jumps and branches behave the same with and without Shizuku.

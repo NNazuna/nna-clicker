@@ -48,7 +48,7 @@ class Player(
         }
         running = true
         loop = 1
-        idx = 0
+        idx = program.start
         program.reset()
         onLoop(loop)
         handler.postDelayed({ step() }, startDelayMs)
@@ -90,6 +90,25 @@ class Player(
                 FlowStep.WAIT -> {
                     instant = 0
                     handler.postDelayed({ done(true) }, (program.waitMs(st, rnd) / speed).toLong())
+                }
+                FlowStep.KEY -> {
+                    instant = 0
+                    svc.performGlobalAction(when (st.ref) {
+                        FlowStep.KEY_HOME -> AccessibilityService.GLOBAL_ACTION_HOME
+                        FlowStep.KEY_RECENTS -> AccessibilityService.GLOBAL_ACTION_RECENTS
+                        else -> AccessibilityService.GLOBAL_ACTION_BACK
+                    })
+                    done(true)
+                }
+                FlowStep.LAUNCH -> {
+                    instant = 0
+                    try {
+                        svc.packageManager.getLaunchIntentForPackage(st.ref)?.let {
+                            it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            svc.startActivity(it)
+                        }
+                    } catch (_: Exception) {}
+                    done(true)
                 }
                 else -> { instant++; done(true) }
             }

@@ -668,12 +668,29 @@ class RecorderService : AccessibilityService() {
 
     // ---------- memutar ----------
 
-    private fun startPlaying() {
+    /**
+     * Play recording [id] starting at the step at time [at] (first loop only), after
+     * at least [minDelayMs], so there is time to switch to the game.
+     */
+    fun playFrom(id: String, at: Long, minDelayMs: Long = 3000) {
+        if (state != State.IDLE) return
+        storage.selectedId = id
+        showPanel()
+        startPlaying(at, minDelayMs)
+        onChanged?.invoke()
+    }
+
+    private var stopByUser = false
+
+    private fun startPlaying(fromAt: Long = -1, minDelayMs: Long = 0) {
         val rec = storage.selected()
         if (rec == null || Program(rec).isEmpty) {
             toast("No recording selected")
             return
         }
+        rec.startAt = fromAt
+        stopByUser = false
+        val startDelay = maxOf(storage.startDelayMs, minDelayMs)
         if (rec.images.any { !it.ready }) toast("Some image steps have no area yet and will be skipped")
         // Image matching corrects for the dim layer; keep it light enough to still see details.
         rec.dim = if (storage.dimScreen) dimFraction(rec) else 0f
@@ -693,7 +710,7 @@ class RecorderService : AccessibilityService() {
             val svc = ShizukuBridge.backend!!
             val ok = try {
                 svc.play(
-                    rec, loops, storage.speed, storage.intervalMs, storage.startDelayMs,
+                    rec, loops, storage.speed, storage.intervalMs, startDelay,
                     storage.jitterPx, storage.jitterPct,
                 )
             } catch (e: Exception) {
@@ -715,7 +732,7 @@ class RecorderService : AccessibilityService() {
             loops = loops,
             speed = storage.speed,
             intervalMs = storage.intervalMs,
-            startDelayMs = storage.startDelayMs,
+            startDelayMs = startDelay,
             jitterPx = storage.jitterPx,
             jitterPct = storage.jitterPct,
             onLoop = { n -> playLoopNow = n; status.text = playText(loops) },
@@ -727,7 +744,8 @@ class RecorderService : AccessibilityService() {
         ).also { it.start() }
     }
 
-    private fun stopPlaying() {
+    private fun stopPlaying(byUser: Boolean = true) {
+        stopByUser = byUser
         if (shizukuActive) {
             try { ShizukuBridge.backend?.stopPlay() } catch (_: Exception) {}
             finishPlaying()
@@ -739,9 +757,28 @@ class RecorderService : AccessibilityService() {
     /** Batas waktu putar tercapai. */
     private val limitStop = Runnable {
         if (state == State.PLAYING) {
-            stopPlaying()
+            stopPlaying(byUser = false)
             toast("Auto stopped after ${storage.maxMinutes} min")
         }
+    }
+
+    /** Vibrate and play the notification sound, so you notice that playback ended while away. */
+    private fun alert() {
+        try {
+            val vib = if (Build.VERSION.SDK_INT >= 31) {
+                getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(VIBRATOR_SERVICE) as? android.os.Vibrator
+            }
+            val pattern = longArrayOf(0, 400, 200, 400, 200, 400)
+            if (Build.VERSION.SDK_INT >= 26) vib?.vibrate(android.os.VibrationEffect.createWaveform(pattern, -1))
+            else @Suppress("DEPRECATION") vib?.vibrate(pattern, -1)
+        } catch (_: Exception) {}
+        try {
+            val uri = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION)
+            android.media.RingtoneManager.getRingtone(this, uri)?.play()
+        } catch (_: Exception) {}
     }
 
     private fun playText(loops: Int): String {
@@ -851,6 +888,7 @@ class RecorderService : AccessibilityService() {
 
     private fun finishPlaying() {
         if (state != State.PLAYING) return
+        if (!stopByUser && storage.alertDone) alert()
         hideDim()
         handler.removeCallbacks(ticker)
         handler.removeCallbacks(limitStop)

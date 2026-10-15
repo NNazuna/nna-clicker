@@ -7,6 +7,8 @@ import android.system.OsConstants
 import android.system.StructPollfd
 import android.view.InputDevice
 import android.view.InputEvent
+import android.view.KeyCharacterMap
+import android.view.KeyEvent
 import android.view.MotionEvent
 import org.json.JSONObject
 import java.io.FileDescriptor
@@ -233,7 +235,7 @@ class InputEngine {
                 while (playing && (loops == 0 || loop <= loops)) {
                     currentLoop = loop
                     prog.reset()
-                    var i = 0
+                    var i = if (loop == 1) prog.start else 0
                     var first = true
                     var instant = 0
                     var wallEnd = SystemClock.uptimeMillis()
@@ -264,10 +266,12 @@ class InputEngine {
                                 instant = 0
                             }
                             is FlowStep -> {
-                                if (st.kind == FlowStep.WAIT) {
-                                    sleepFor((prog.waitMs(st, rnd) / sp).toLong())
-                                    instant = 0
-                                } else instant++
+                                when (st.kind) {
+                                    FlowStep.WAIT -> sleepFor((prog.waitMs(st, rnd) / sp).toLong())
+                                    FlowStep.KEY -> key(st.ref)
+                                    FlowStep.LAUNCH -> launch(st.ref)
+                                }
+                                if (Program.isInstant(st)) instant++ else instant = 0
                                 wallEnd = SystemClock.uptimeMillis()
                             }
                         }
@@ -320,6 +324,40 @@ class InputEngine {
             sleepFor(60)
         }
         return false
+    }
+
+    /** Press a system button: back, home, or recent apps. */
+    private fun key(ref: String) {
+        val (im, m) = injector ?: return
+        val code = when (ref) {
+            FlowStep.KEY_HOME -> KeyEvent.KEYCODE_HOME
+            FlowStep.KEY_RECENTS -> KeyEvent.KEYCODE_APP_SWITCH
+            else -> KeyEvent.KEYCODE_BACK
+        }
+        val down = SystemClock.uptimeMillis()
+        for (action in intArrayOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
+            val ev = KeyEvent(down, SystemClock.uptimeMillis(), action, code, 0, 0,
+                KeyCharacterMap.VIRTUAL_KEYBOARD, 0, KeyEvent.FLAG_FROM_SYSTEM, InputDevice.SOURCE_KEYBOARD)
+            try {
+                m.invoke(im, ev, 0)
+            } catch (e: Throwable) {
+                lastErr = "Key press blocked by system: ${e.cause ?: e}"
+            }
+        }
+    }
+
+    /** Open an app by package name, the same way the launcher does. */
+    private fun launch(pkg: String) {
+        if (pkg.isEmpty()) return
+        try {
+            val p = Runtime.getRuntime().exec(arrayOf(
+                "monkey", "-p", pkg, "-c", "android.intent.category.LAUNCHER", "1",
+            ))
+            p.inputStream.readBytes()
+            p.waitFor()
+        } catch (e: Throwable) {
+            lastErr = "Can't open $pkg: $e"
+        }
     }
 
     /** Full-resolution PNG of the current screen. */

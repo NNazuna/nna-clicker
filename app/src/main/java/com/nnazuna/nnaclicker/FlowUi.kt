@@ -11,11 +11,8 @@ import android.widget.TextView
 /** Dialogs and texts shared by the screens that edit flow steps (labels, jumps, waits). */
 object FlowUi {
 
-    /** Seconds with at most one decimal, e.g. "1.5 s" or "2 s". */
-    fun sec(ms: Long): String {
-        val s = ms / 1000.0
-        return if (ms % 1000 == 0L) "${ms / 1000} s" else String.format(java.util.Locale.US, "%.1f s", s)
-    }
+    /** "250 ms" below a second, otherwise seconds with up to two decimals: "1.5 s", "2 s". */
+    fun sec(ms: Long): String = if (ms in 1..999) "$ms ms" else "${secText(ms)} s"
 
     fun parseSec(v: String): Long? = v.trim().replace(',', '.').toDoubleOrNull()?.let { (it * 1000).toLong() }
 
@@ -90,7 +87,35 @@ object FlowUi {
             onDone()
         }
 
-    private fun secText(ms: Long) = if (ms % 1000 == 0L) "${ms / 1000}" else String.format(java.util.Locale.US, "%.1f", ms / 1000.0)
+    private fun secText(ms: Long): String =
+        java.math.BigDecimal(ms).movePointLeft(3).setScale(2, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+
+    /** Pick an installed app that has a launcher icon; [onPick] gets (package, name). */
+    fun pickApp(a: Activity, p: Pal, onPick: (String, String) -> Unit) {
+        val pm = a.packageManager
+        val apps = pm.queryIntentActivities(
+            android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER), 0,
+        ).map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
+            .filter { it.first != a.packageName }
+            .distinctBy { it.first }
+            .sortedBy { it.second.lowercase() }
+        if (apps.isEmpty()) return
+        AlertDialog.Builder(a, Ui.dialogTheme(p))
+            .setTitle("Open app")
+            .setItems(apps.map { it.second }.toTypedArray()) { _, which -> onPick(apps[which].first, apps[which].second) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Pick a system button for a KEY step. */
+    fun pickKey(a: Activity, p: Pal, onPick: (String) -> Unit) {
+        val keys = listOf(FlowStep.KEY_BACK, FlowStep.KEY_HOME, FlowStep.KEY_RECENTS)
+        AlertDialog.Builder(a, Ui.dialogTheme(p))
+            .setTitle("System button")
+            .setItems(keys.map { FlowStep.keyName(it) }.toTypedArray()) { _, which -> onPick(keys[which]) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
 
     private fun field(a: Activity, value: String, type: Int) = EditText(a).apply {
         inputType = type

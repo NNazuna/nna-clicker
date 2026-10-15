@@ -1,9 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- To check whether Shizuku is installed (setup guide). -->
+    <!-- Short vibration when playback finishes (optional alert). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <queries>
+        <!-- To check whether Shizuku is installed (setup guide). -->
         <package android:name="moe.shizuku.privileged.api" />
+        <!-- To list apps for the "Open app" step. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
     </queries>
 
     <application

@@ -117,6 +117,11 @@ class Storage(context: Context) {
         get() = prefs.getBoolean("dim_screen", false)
         set(v) = prefs.edit().putBoolean("dim_screen", v).apply()
 
+    /** Vibrate and sound when playback ends on its own or stops with an error. */
+    var alertDone: Boolean
+        get() = prefs.getBoolean("alert_done", false)
+        set(v) = prefs.edit().putBoolean("alert_done", v).apply()
+
     /** Tingkat gelap 10–95 %. */
     var dimLevel: Int
         get() = prefs.getInt("dim_level", 80)

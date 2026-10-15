@@ -141,9 +141,14 @@ class MainActivity : Activity() {
         })
         listGroup = k.group()
         root.addView(listGroup)
-        root.addView(k.textButton("Screenshots", p.play) {
+        val links = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        links.addView(k.textButton("Auto clicker", p.play) { newAutoClicker() }.apply {
+            setPadding(k.dp(4f), k.dp(10f), k.dp(14f), k.dp(4f))
+        })
+        links.addView(k.textButton("Screenshots", p.play) {
             SnapPicker.show(this, k, storage, "Screenshots", null)
         }.apply { setPadding(k.dp(4f), k.dp(10f), k.dp(4f), k.dp(4f)) })
+        root.addView(links)
 
         // ---- Pemutaran ----
         root.addView(k.sectionHeader("Playback"))
@@ -216,6 +221,9 @@ class MainActivity : Activity() {
                 v.toFloatOrNull()?.let { storage.jitterPct = it }; refreshSettings()
             }
         }
+        val (alertRow, _) = k.switchRow("Alert when finished", storage.alertDone) { on -> storage.alertDone = on }
+        play.addView(alertRow)
+        play.addView(k.divider())
         val (dimRow, _) = k.switchRow("Dim screen while playing", storage.dimScreen) { on ->
             storage.dimScreen = on
             refreshSettings()
@@ -286,6 +294,20 @@ class MainActivity : Activity() {
         group.addView(row)
         if (!last) group.addView(k.divider())
         return value
+    }
+
+    /** Simple auto clicker: one tap or swipe repeated until stopped. */
+    private fun newAutoClicker() {
+        AlertDialog.Builder(this, Ui.dialogTheme(p))
+            .setTitle("Auto clicker")
+            .setItems(arrayOf("Tap one spot", "Swipe")) { _, which ->
+                startActivity(
+                    Intent(this, PointActivity::class.java)
+                        .putExtra(PointActivity.EXTRA_AUTO, true)
+                        .putExtra(PointActivity.EXTRA_MODE, if (which == 0) PointActivity.MODE_TAP else PointActivity.MODE_SWIPE)
+                )
+            }
+            .show()
     }
 
     private fun trim(f: Float): String = if (f == f.toLong().toFloat()) f.toLong().toString() else f.toString()

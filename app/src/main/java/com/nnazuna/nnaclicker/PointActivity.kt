@@ -24,6 +24,8 @@ class PointActivity : Activity() {
         const val EXTRA_AFTER_START = "afterStart"
         /** Index in [Recording.gestures] to edit. */
         const val EXTRA_GESTURE = "gesture"
+        /** Create a new auto clicker recording: the tap or swipe repeats until stopped. */
+        const val EXTRA_AUTO = "auto"
         const val MODE_TAP = "tap"
         const val MODE_SWIPE = "swipe"
         const val GAP = 500L
@@ -42,13 +44,18 @@ class PointActivity : Activity() {
     private var shot: Bitmap? = null
     private var view: PointView? = null
     private lateinit var coordRows: LinearLayout
+    private var auto = false
+    /** Auto clicker: pause after each tap or swipe (ms). */
+    private var everyMs = 1000L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         storage = Storage(this)
         k = Kit(this)
         Ui.styleWindow(this, p)
-        rec = storage.get(intent.getStringExtra(EXTRA_REC)) ?: run { finish(); return }
+        auto = intent.getBooleanExtra(EXTRA_AUTO, false)
+        rec = if (auto) Recording(java.util.UUID.randomUUID().toString(), "", System.currentTimeMillis(), mutableListOf())
+        else storage.get(intent.getStringExtra(EXTRA_REC)) ?: run { finish(); return }
 
         val gi = intent.getIntExtra(EXTRA_GESTURE, -1)
         editing = rec.gestures.getOrNull(gi)
@@ -102,6 +109,8 @@ class PointActivity : Activity() {
             setOnClickListener { finish() }
         })
         val title = when {
+            auto && swipe -> "Auto swipe"
+            auto -> "Auto tap"
             editing != null && swipe -> "Edit swipe"
             editing != null -> "Edit tap"
             swipe -> "Add swipe"
@@ -195,6 +204,16 @@ class PointActivity : Activity() {
             v2.text = "$dist px"
             coordRows.addView(r2)
         }
+        if (auto) {
+            coordRows.addView(k.divider())
+            val (r3, v3) = k.valueRow("Repeat every", "Pause after each ${if (swipe) "swipe" else "tap"}. Runs until you stop it.") {
+                Ui.numberDialog(this, p, "Repeat every (ms)", everyMs.toString(), false, "1000 ms = 1 second") { s ->
+                    s.toLongOrNull()?.let { everyMs = it.coerceIn(10L, 3_600_000L); renderCoords() }
+                }
+            }
+            v3.text = "$everyMs ms"
+            coordRows.addView(r3)
+        }
     }
 
     private fun editPoint(i: Int) {
@@ -229,6 +248,7 @@ class PointActivity : Activity() {
             Toast.makeText(this, "Move START and END further apart", Toast.LENGTH_SHORT).show()
             return
         }
+        if (auto) { saveAuto(); return }
         val steps = rec.steps()
         val e = editing
         if (e != null) {
@@ -250,6 +270,19 @@ class PointActivity : Activity() {
         }
         storage.save(rec)
         Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
+        finish()
+    }
+
+    /** Label → tap/swipe → (pause) → go to label, every time. */
+    private fun saveAuto() {
+        val label = FlowStep(0, FlowStep.LABEL, ref = FlowStep.newId(), name = "Repeat")
+        val g = gesture(1)
+        val jump = FlowStep(g.at + g.duration + everyMs, FlowStep.GOTO, ref = label.ref)
+        rec.flows.add(label); rec.gestures.add(g); rec.flows.add(jump)
+        rec.name = (if (swipe) "Auto swipe" else "Auto tap") + " · every ${FlowUi.sec(everyMs)}"
+        storage.save(rec)
+        storage.selectedId = rec.id
+        Toast.makeText(this, "Saved and selected. Open the game and press play on the panel.", Toast.LENGTH_LONG).show()
         finish()
     }
 }

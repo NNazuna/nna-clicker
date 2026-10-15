@@ -27,6 +27,9 @@ class Program(rec: Recording) {
 
     val isEmpty: Boolean get() = steps.isEmpty()
 
+    /** Index to start the first loop at (see [Recording.startAt]). */
+    val start: Int = if (rec.startAt < 0) 0 else steps.indexOfFirst { it.at >= rec.startAt }.coerceAtLeast(0)
+
     /** Start of a new outer loop: reset loop counters. */
     fun reset() {
         jumps.fill(0)
@@ -78,6 +81,8 @@ class Program(rec: Recording) {
         const val STOP = -1
 
         /** Steps that take no time; a loop of only these gets a short pause so it can't spin the CPU. */
-        fun isInstant(s: Step) = s is FlowStep && s.kind != FlowStep.WAIT
+        fun isInstant(s: Step) = s is FlowStep && s.kind in INSTANT
+
+        private val INSTANT = setOf(FlowStep.LABEL, FlowStep.GOTO, FlowStep.STOP)
     }
 }

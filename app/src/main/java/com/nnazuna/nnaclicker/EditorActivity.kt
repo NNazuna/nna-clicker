@@ -299,6 +299,8 @@ class EditorActivity : Activity() {
             FlowStep.LABEL -> Icon.FLAG to p.play
             FlowStep.GOTO -> Icon.JUMP to (if (missing) p.warn else p.play)
             FlowStep.WAIT -> Icon.CLOCK to p.muted
+            FlowStep.KEY -> Icon.BACK to p.ink
+            FlowStep.LAUNCH -> Icon.PLAY to p.ink
             else -> Icon.STOP to p.rec
         }
         row.addView(k.icon(icon, color, 22f), LinearLayout.LayoutParams(k.dp(28f), k.dp(28f)).apply { rightMargin = k.dp(12f) })
@@ -308,6 +310,8 @@ class EditorActivity : Activity() {
             FlowStep.LABEL -> s.name.ifEmpty { "Label" }
             FlowStep.GOTO -> if (missing) "Go to…" else "Go to ${rec.labelName(s.ref)}"
             FlowStep.WAIT -> "Wait"
+            FlowStep.KEY -> "Press ${FlowStep.keyName(s.ref)}"
+            FlowStep.LAUNCH -> "Open ${s.name.ifEmpty { s.ref }}"
             else -> "Stop playback"
         }
         col.addView(k.text(title, 16f, 2, if (isLabel) p.play else p.ink))
@@ -319,6 +323,8 @@ class EditorActivity : Activity() {
                 "$dir  ·  " + if (s.count == 0) "every time" else "${s.count}× then continue"
             }
             FlowStep.WAIT -> if (s.maxMs > s.minMs) "random ${FlowUi.sec(s.minMs)} – ${FlowUi.sec(s.maxMs)}" else FlowUi.sec(s.minMs)
+            FlowStep.KEY -> "System button"
+            FlowStep.LAUNCH -> "Opens the app, or brings it to the front"
             else -> "Ends playback here"
         }
         col.addView(k.text(sub, 13f, if (missing) 1 else 0, if (missing) p.warn else p.muted).apply {
@@ -349,6 +355,8 @@ class EditorActivity : Activity() {
                     .show()
             }
             FlowStep.WAIT -> FlowUi.editWait(this, p, s) { save() }
+            FlowStep.KEY -> FlowUi.pickKey(this, p) { s.ref = it; save() }
+            FlowStep.LAUNCH -> FlowUi.pickApp(this, p) { pkg, name -> s.ref = pkg; s.name = name; save() }
         }
     }
 
@@ -377,11 +385,12 @@ class EditorActivity : Activity() {
             (steps[i] as? FlowStep)?.let { f ->
                 when (f.kind) {
                     FlowStep.LABEL -> menu.add(0, 10, 0, "Rename")
-                    FlowStep.GOTO, FlowStep.WAIT -> menu.add(0, 10, 0, "Edit")
+                    FlowStep.GOTO, FlowStep.WAIT, FlowStep.KEY, FlowStep.LAUNCH -> menu.add(0, 10, 0, "Edit")
                     else -> {}
                 }
             }
             menu.add(0, 9, 7, "Add step after")
+            menu.add(0, 11, 8, "Play from here")
             if (i > 0) menu.add(0, 5, 1, "Move up")
             if (i < steps.size - 1) menu.add(0, 6, 2, "Move down")
             if (steps.size > 2) menu.add(0, 7, 3, "Move to…")
@@ -396,6 +405,7 @@ class EditorActivity : Activity() {
                     4 -> openImage(steps[i] as ImageStep)
                     8 -> editGesture(steps[i] as RecGesture)
                     10 -> editFlow(steps[i] as FlowStep)
+                    11 -> playFrom(i)
                     9 -> addStep(i)
                     5 -> move(i, i - 1)
                     6 -> move(i, i + 1)
@@ -486,7 +496,10 @@ class EditorActivity : Activity() {
         val afterStart = anchor?.at ?: -1L
         AlertDialog.Builder(this, Ui.dialogTheme(p))
             .setTitle(if (anchor == null) "Add step" else "Add step after ${after + 1}")
-            .setItems(arrayOf("Tap", "Swipe", "Image (from a screenshot)", "Wait", "Label", "Go to label", "Stop playback")) { _, which ->
+            .setItems(arrayOf(
+                "Tap", "Swipe", "Image (from a screenshot)", "Wait", "Label", "Go to label",
+                "Back / Home / Recent apps", "Open app", "Stop playback",
+            )) { _, which ->
                 val index = if (after < 0) steps.size else after + 1
                 when (which) {
                     0, 1 -> startActivity(
@@ -511,10 +524,26 @@ class EditorActivity : Activity() {
                         val st = FlowStep(0, FlowStep.GOTO, ref = ref)
                         askJumps(st) { insertAt(index, st, 0) }
                     }
-                    6 -> insertAt(index, FlowStep(0, FlowStep.STOP), 0)
+                    6 -> FlowUi.pickKey(this, p) { key -> insertAt(index, FlowStep(0, FlowStep.KEY, ref = key), 0) }
+                    7 -> FlowUi.pickApp(this, p) { pkg, name ->
+                        insertAt(index, FlowStep(0, FlowStep.LAUNCH, ref = pkg, name = name), 0)
+                    }
+                    8 -> insertAt(index, FlowStep(0, FlowStep.STOP), 0)
                 }
             }
             .show()
+    }
+
+    /** Switch to the game and play from step [i] after a short countdown. */
+    private fun playFrom(i: Int) {
+        val svc = RecorderService.instance
+        if (svc == null) {
+            android.widget.Toast.makeText(this, "Turn on the accessibility service first", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        android.widget.Toast.makeText(this, "Open the game. Playing from step ${i + 1} in 3 seconds…", android.widget.Toast.LENGTH_LONG).show()
+        svc.playFrom(rec.id, steps[i].at)
+        moveTaskToBack(true)
     }
 
     private fun editGesture(g: RecGesture) {
