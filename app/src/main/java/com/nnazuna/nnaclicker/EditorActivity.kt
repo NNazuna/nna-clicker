@@ -122,26 +122,58 @@ class EditorActivity : Activity() {
     private fun move(from: Int, to: Int) {
         if (to !in steps.indices || from == to) return
         val gaps = steps.indices.map { gapBefore(it) }
-        val start = steps.first().at
         val order = steps.toMutableList()
         order.add(to, order.removeAt(from))
+        retime(order, gaps)
+        save()
+    }
+
+    /** Give the steps in [order] new times so that step i starts [gaps]\[i] after the previous one ends. */
+    private fun retime(order: List<Step>, gaps: List<Long>) {
+        val start = steps.firstOrNull()?.at ?: 0L
         var prevEnd = 0L
         order.forEachIndexed { i, st ->
             st.at = if (i == 0) start else prevEnd + gaps[i]
             prevEnd = st.at + st.duration
         }
         steps = order
+    }
+
+    /**
+     * Insert the new step [s] at position [index] with [gap] before it. The steps after it keep
+     * their own delays, so the rest of the recording keeps its rhythm.
+     */
+    private fun insertAt(index: Int, s: Step, gap: Long) {
+        val gaps = steps.indices.map { gapBefore(it) }.toMutableList()
+        val order = steps.toMutableList()
+        val at = index.coerceIn(0, order.size)
+        order.add(at, s)
+        gaps.add(at, gap)
+        when (s) {
+            is RecGesture -> rec.gestures.add(s)
+            is ImageStep -> rec.images.add(s)
+            is FlowStep -> rec.flows.add(s)
+        }
+        retime(order, gaps)
         save()
     }
 
     private fun render() {
         steps = rec.steps()
-        val imgs = rec.images.size
-        summary.text = "${steps.size} steps" + (if (imgs > 0) " ($imgs image)" else "") + "  ·  ${Ui.fmtSec(rec.length)}"
+        val extra = listOfNotNull(
+            rec.images.size.takeIf { it > 0 }?.let { "$it image" },
+            rec.flows.size.takeIf { it > 0 }?.let { "$it flow" },
+        )
+        summary.text = "${steps.size} steps" + (if (extra.isNotEmpty()) " (${extra.joinToString(", ")})" else "") +
+            "  ·  ${Ui.fmtSec(rec.length)}"
         listBox.removeAllViews()
         steps.forEachIndexed { i, s ->
             if (i > 0) listBox.addView(gapView(i))
-            listBox.addView(if (s is ImageStep) imageView(i, s) else gestureView(i, s as RecGesture))
+            listBox.addView(when (s) {
+                is ImageStep -> imageView(i, s)
+                is FlowStep -> flowView(i, s)
+                else -> gestureView(i, s as RecGesture)
+            })
         }
     }
 
@@ -156,7 +188,8 @@ class EditorActivity : Activity() {
         }
         row.addView(View(this).apply { setBackgroundColor(p.line) },
             LinearLayout.LayoutParams(k.dp(2f), k.dp(40f)).apply { leftMargin = k.dp(17f); rightMargin = k.dp(20f) })
-        row.addView(k.text("wait ${gapBefore(i)} ms", 13.5f, 1, p.play).apply {
+        val gap = gapBefore(i)
+        row.addView(k.text(if (gap <= 1) "no wait" else "wait $gap ms", 13.5f, 1, p.play).apply {
             fontFeatureSettings = "tnum"
             setPadding(k.dp(10f), k.dp(4f), k.dp(10f), k.dp(4f))
             background = k.rounded(p.surface, 12f)
@@ -225,14 +258,108 @@ class EditorActivity : Activity() {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         col.addView(k.text(s.title, 16f, 2))
         val sub = if (!s.ready) "Tap to choose the area" else
-            "${if (s.anywhere) "anywhere" else "near its spot"}  ·  up to ${s.timeoutMs / 1000} s  ·  ${(s.threshold * 100).toInt()}%"
+            "${if (s.anywhere) "anywhere" else "near its spot"}  ·  " +
+                (if (s.timeoutMs <= 0) "check once" else "up to ${s.timeoutMs / 1000} s") +
+                "  ·  ${(s.threshold * 100).toInt()}%"
         col.addView(k.text(sub, 13f, if (s.ready) 0 else 1, if (s.ready) p.muted else p.warn).apply {
             setPadding(0, k.dp(3f), 0, 0)
+        })
+        branchText(s)?.let { b ->
+            col.addView(k.text(b, 13f, 1, p.play).apply { setPadding(0, k.dp(3f), 0, 0) })
+        }
+        row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(moreButton(i))
+        return row
+    }
+
+    /** "Found → Label 1 · Not found → stop", or null when the step just continues / stops as usual. */
+    private fun branchText(s: ImageStep): String? {
+        val yes = if (s.action == ImageStep.ACTION_GONE) "Gone" else "Found"
+        val no = if (s.action == ImageStep.ACTION_GONE) "Still there" else "Not found"
+        val parts = mutableListOf<String>()
+        s.foundGoto?.let { parts += "$yes → ${rec.labelName(it) ?: "?"}" }
+        if (s.onTimeout == ImageStep.ON_TIMEOUT_GOTO) parts += "$no → ${rec.labelName(s.failGoto) ?: "?"}"
+        else if (parts.isNotEmpty() || s.timeoutMs <= 0) parts += "$no → " + if (s.onTimeout == ImageStep.ON_TIMEOUT_SKIP) "next" else "stop"
+        return parts.takeIf { it.isNotEmpty() }?.joinToString("  ·  ")
+    }
+
+    private fun flowView(i: Int, s: FlowStep): View {
+        val missing = s.kind == FlowStep.GOTO && rec.labelName(s.ref) == null
+        val isLabel = s.kind == FlowStep.LABEL
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val base = if (isLabel) k.rounded(p.bg, 14f, p.play) else k.rounded(p.surface, 14f, if (missing) p.warn else null)
+            background = k.ripple(base, k.dp(14f).toFloat())
+            setPadding(0, k.dp(8f), k.dp(4f), k.dp(8f))
+            setOnClickListener { editFlow(s) }
+        }
+        row.addView(number(i), LinearLayout.LayoutParams(k.dp(28f), k.dp(28f)).apply { leftMargin = k.dp(4f); rightMargin = k.dp(12f) })
+        val (icon, color) = when (s.kind) {
+            FlowStep.LABEL -> Icon.FLAG to p.play
+            FlowStep.GOTO -> Icon.JUMP to (if (missing) p.warn else p.play)
+            FlowStep.WAIT -> Icon.CLOCK to p.muted
+            else -> Icon.STOP to p.rec
+        }
+        row.addView(k.icon(icon, color, 22f), LinearLayout.LayoutParams(k.dp(28f), k.dp(28f)).apply { rightMargin = k.dp(12f) })
+
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val title = when (s.kind) {
+            FlowStep.LABEL -> s.name.ifEmpty { "Label" }
+            FlowStep.GOTO -> if (missing) "Go to…" else "Go to ${rec.labelName(s.ref)}"
+            FlowStep.WAIT -> "Wait"
+            else -> "Stop playback"
+        }
+        col.addView(k.text(title, 16f, 2, if (isLabel) p.play else p.ink))
+        val sub = when (s.kind) {
+            FlowStep.LABEL -> "Label  ·  jumps land here"
+            FlowStep.GOTO -> if (missing) "Tap to pick a label" else {
+                val target = steps.indexOfFirst { it is FlowStep && it.kind == FlowStep.LABEL && it.ref == s.ref }
+                val dir = if (target <= i) "back to step ${target + 1}" else "ahead to step ${target + 1}"
+                "$dir  ·  " + if (s.count == 0) "every time" else "${s.count}× then continue"
+            }
+            FlowStep.WAIT -> if (s.maxMs > s.minMs) "random ${FlowUi.sec(s.minMs)} – ${FlowUi.sec(s.maxMs)}" else FlowUi.sec(s.minMs)
+            else -> "Ends playback here"
+        }
+        col.addView(k.text(sub, 13f, if (missing) 1 else 0, if (missing) p.warn else p.muted).apply {
+            setPadding(0, k.dp(3f), 0, 0)
+            fontFeatureSettings = "tnum"
         })
         row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         row.addView(moreButton(i))
         return row
     }
+
+    private fun editFlow(s: FlowStep) {
+        when (s.kind) {
+            FlowStep.LABEL -> FlowUi.textDialog(this, p, "Label name", s.name) { v ->
+                if (v.isNotEmpty()) { s.name = v; save() }
+            }
+            FlowStep.GOTO -> {
+                val target = rec.labelName(s.ref)
+                AlertDialog.Builder(this, Ui.dialogTheme(p))
+                    .setTitle("Go to")
+                    .setItems(arrayOf(
+                        "Label: ${target ?: "none"}",
+                        "Jumps: " + if (s.count == 0) "every time" else "${s.count}, then continue",
+                    )) { _, which ->
+                        if (which == 0) FlowUi.pickLabel(this, p, rec, s.ref, "Go to label") { s.ref = it; save() }
+                        else askJumps(s) { save() }
+                    }
+                    .show()
+            }
+            FlowStep.WAIT -> FlowUi.editWait(this, p, s) { save() }
+        }
+    }
+
+    private fun askJumps(s: FlowStep, onDone: () -> Unit) =
+        Ui.numberDialog(
+            this, p, "Number of jumps", s.count.toString(), false,
+            "0 = jump every time. Otherwise jump this many times, then continue with the next step. " +
+                "To repeat a part 3 times, put a label before it and jump 2 times.",
+        ) { v ->
+            v.toIntOrNull()?.let { s.count = it.coerceIn(0, 100_000); onDone() }
+        }
 
     private fun openImage(s: ImageStep) {
         startActivity(
@@ -247,6 +374,13 @@ class EditorActivity : Activity() {
             if (steps[i] is ImageStep) menu.add(0, 4, 0, "Edit image")
             val g = steps[i] as? RecGesture
             if (g != null && g.strokes.size == 1) menu.add(0, 8, 0, "Edit position")
+            (steps[i] as? FlowStep)?.let { f ->
+                when (f.kind) {
+                    FlowStep.LABEL -> menu.add(0, 10, 0, "Rename")
+                    FlowStep.GOTO, FlowStep.WAIT -> menu.add(0, 10, 0, "Edit")
+                    else -> {}
+                }
+            }
             menu.add(0, 9, 7, "Add step after")
             if (i > 0) menu.add(0, 5, 1, "Move up")
             if (i < steps.size - 1) menu.add(0, 6, 2, "Move down")
@@ -261,6 +395,7 @@ class EditorActivity : Activity() {
                     3 -> delete(i)
                     4 -> openImage(steps[i] as ImageStep)
                     8 -> editGesture(steps[i] as RecGesture)
+                    10 -> editFlow(steps[i] as FlowStep)
                     9 -> addStep(i)
                     5 -> move(i, i - 1)
                     6 -> move(i, i + 1)
@@ -291,14 +426,15 @@ class EditorActivity : Activity() {
     private fun duplicate(i: Int) {
         val s = steps[i]
         val gap = if (i > 0) gapBefore(i) else 300L
-        val newAt = s.at + s.duration + gap
-        val shift = s.duration + gap
-        for (n in i + 1 until steps.size) steps[n].at += shift
-        when (s) {
-            is RecGesture -> rec.gestures.add(RecGesture(newAt, s.strokes))
-            is ImageStep -> rec.images.add(s.copy(newAt))
+        val copy: Step = when (s) {
+            is RecGesture -> RecGesture(s.at, s.strokes)
+            is ImageStep -> s.copy()
+            is FlowStep -> s.copy().apply {
+                if (kind == FlowStep.LABEL) { ref = FlowStep.newId(); name = FlowUi.newLabelName(rec) }
+            }
+            else -> return
         }
-        save()
+        insertAt(i + 1, copy, gap)
     }
 
     private fun delete(i: Int) {
@@ -311,6 +447,34 @@ class EditorActivity : Activity() {
         when (val s = steps[i]) {
             is RecGesture -> rec.gestures.remove(s)
             is ImageStep -> rec.images.remove(s)
+            is FlowStep -> {
+                if (s.kind == FlowStep.LABEL) {
+                    val users = rec.flows.count { it.kind == FlowStep.GOTO && it.ref == s.ref } +
+                        rec.images.count { it.foundGoto == s.ref || it.failGoto == s.ref }
+                    if (users > 0) {
+                        AlertDialog.Builder(this, Ui.dialogTheme(p))
+                            .setTitle("Delete ${s.name}?")
+                            .setMessage("$users step(s) jump to this label. Image steps will continue with the next step instead, and Go to steps will need a new label.")
+                            .setPositiveButton("Delete") { _, _ -> deleteLabel(s) }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                        return
+                    }
+                }
+                rec.flows.remove(s)
+            }
+        }
+        save()
+    }
+
+    private fun deleteLabel(s: FlowStep) {
+        rec.flows.remove(s)
+        for (img in rec.images) {
+            if (img.foundGoto == s.ref) img.foundGoto = null
+            if (img.failGoto == s.ref) {
+                img.failGoto = null
+                if (img.onTimeout == ImageStep.ON_TIMEOUT_GOTO) img.onTimeout = ImageStep.ON_TIMEOUT_SKIP
+            }
         }
         save()
     }
@@ -322,7 +486,8 @@ class EditorActivity : Activity() {
         val afterStart = anchor?.at ?: -1L
         AlertDialog.Builder(this, Ui.dialogTheme(p))
             .setTitle(if (anchor == null) "Add step" else "Add step after ${after + 1}")
-            .setItems(arrayOf("Tap", "Swipe", "Image (from a screenshot)")) { _, which ->
+            .setItems(arrayOf("Tap", "Swipe", "Image (from a screenshot)", "Wait", "Label", "Go to label", "Stop playback")) { _, which ->
+                val index = if (after < 0) steps.size else after + 1
                 when (which) {
                     0, 1 -> startActivity(
                         Intent(this, PointActivity::class.java)
@@ -331,7 +496,22 @@ class EditorActivity : Activity() {
                             .putExtra(PointActivity.EXTRA_AFTER, afterEnd)
                             .putExtra(PointActivity.EXTRA_AFTER_START, afterStart)
                     )
-                    else -> addImageStep(afterEnd, afterStart)
+                    2 -> addImageStep(afterEnd, afterStart)
+                    3 -> FlowStep(0, FlowStep.WAIT, minMs = 1000, maxMs = 2000).let { st ->
+                        FlowUi.editWait(this, p, st) { insertAt(index, st, 0) }
+                    }
+                    4 -> {
+                        val st = FlowStep(0, FlowStep.LABEL, ref = FlowStep.newId(), name = FlowUi.newLabelName(rec))
+                        FlowUi.textDialog(this, p, "Label name", st.name) { v ->
+                            if (v.isNotEmpty()) st.name = v
+                            insertAt(index, st, 0)
+                        }
+                    }
+                    5 -> FlowUi.pickLabel(this, p, rec, null, "Go to label") { ref ->
+                        val st = FlowStep(0, FlowStep.GOTO, ref = ref)
+                        askJumps(st) { insertAt(index, st, 0) }
+                    }
+                    6 -> insertAt(index, FlowStep(0, FlowStep.STOP), 0)
                 }
             }
             .show()

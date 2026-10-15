@@ -35,6 +35,7 @@ class ImageStepActivity : Activity() {
     private lateinit var actionBox: LinearLayout
     private lateinit var searchBox: LinearLayout
     private lateinit var failBox: LinearLayout
+    private lateinit var foundBox: LinearLayout
     private lateinit var timeoutValue: TextView
     private lateinit var matchValue: TextView
 
@@ -150,11 +151,14 @@ class ImageStepActivity : Activity() {
         g.addView(k.divider())
         searchBox = segRow(g, "Search")
         g.addView(k.divider())
-        k.valueRow("Give up after") {
-            Ui.numberDialog(this, p, "Give up after (seconds)", (step.timeoutMs / 1000).toString(), false) { v ->
-                v.toLongOrNull()?.let { step.timeoutMs = (it.coerceIn(1, 3600)) * 1000; refresh() }
+        k.valueRow("Give up after", "0 = check once, without waiting") {
+            Ui.numberDialog(this, p, "Give up after (seconds)", (step.timeoutMs / 1000).toString(), false,
+                "0 checks the screen once. Use it with \"If found\" and \"If not found\" to choose what runs next.") { v ->
+                v.toLongOrNull()?.let { step.timeoutMs = (it.coerceIn(0, 3600)) * 1000; refresh() }
             }
         }.let { (row, v) -> timeoutValue = v; g.addView(row) }
+        g.addView(k.divider())
+        foundBox = segRow(g, "If found")
         g.addView(k.divider())
         failBox = segRow(g, "If not found")
         g.addView(k.divider())
@@ -197,6 +201,8 @@ class ImageStepActivity : Activity() {
             val on = i == selected
             box.addView(k.text(label, 14.5f, if (on) 2 else 1, if (on) (if (p.dark) 0xFF0F1312.toInt() else Color.WHITE) else p.ink).apply {
                 gravity = Gravity.CENTER
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
                 setPadding(k.dp(4f), k.dp(9f), k.dp(4f), k.dp(9f))
                 background = if (on) k.rounded(p.play, 8f) else k.ripple(null, k.dp(8f).toFloat())
                 setOnClickListener { onPick(i); refresh() }
@@ -207,10 +213,27 @@ class ImageStepActivity : Activity() {
     private fun refresh() {
         fill(actionBox, listOf("Wait for it", "Tap it", "Wait until gone"), step.action) { step.action = it }
         fill(searchBox, listOf("Near this spot", "Anywhere"), if (step.anywhere) 1 else 0) { step.anywhere = it == 1 }
-        fill(failBox, listOf("Stop playback", "Skip this step"), step.onTimeout) { step.onTimeout = it }
-        timeoutValue.text = "${step.timeoutMs / 1000} s"
+        val gone = step.action == ImageStep.ACTION_GONE
+        rowLabel(foundBox).text = if (gone) "If gone" else "If found"
+        rowLabel(failBox).text = if (gone) "If still there" else "If not found"
+        fill(foundBox, listOf("Next step", gotoText(step.foundGoto)), if (step.foundGoto != null) 1 else 0) { i ->
+            if (i == 0) step.foundGoto = null
+            else FlowUi.pickLabel(this, p, rec, step.foundGoto, "Then go to") { step.foundGoto = it; refresh() }
+        }
+        fill(failBox, listOf("Stop", "Next step", gotoText(step.failGoto.takeIf { step.onTimeout == ImageStep.ON_TIMEOUT_GOTO })),
+            step.onTimeout) { i ->
+            if (i < 2) step.onTimeout = i
+            else FlowUi.pickLabel(this, p, rec, step.failGoto, "Then go to") {
+                step.failGoto = it; step.onTimeout = ImageStep.ON_TIMEOUT_GOTO; refresh()
+            }
+        }
+        timeoutValue.text = if (step.timeoutMs <= 0) "Check once" else "${step.timeoutMs / 1000} s"
         matchValue.text = "${(step.threshold * 100).toInt()}%"
     }
+
+    private fun rowLabel(box: LinearLayout) = (box.parent as LinearLayout).getChildAt(0) as TextView
+
+    private fun gotoText(label: String?) = label?.let { "→ ${rec.labelName(it) ?: "?"}" } ?: "Go to…"
 
     private fun pickScreenshot() {
         SnapPicker.show(this, k, storage, "Use screenshot") { file ->

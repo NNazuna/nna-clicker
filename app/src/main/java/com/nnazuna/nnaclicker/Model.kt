@@ -79,6 +79,10 @@ class ImageStep(
     var timeoutMs: Long = 15_000,
     var onTimeout: Int = ON_TIMEOUT_STOP,
     var threshold: Float = 0.82f,
+    /** Label id to jump to when found (null = continue with the next step). */
+    var foundGoto: String? = null,
+    /** Label id to jump to when not found, used when [onTimeout] is [ON_TIMEOUT_GOTO]. */
+    var failGoto: String? = null,
 ) : Step {
     override val duration: Long get() = 0
 
@@ -93,7 +97,7 @@ class ImageStep(
 
     fun copy(newAt: Long = at) = ImageStep(
         newAt, snap, x, y, w, h, screenW, screenH, tw, th, tpl.copyOf(),
-        action, anywhere, timeoutMs, onTimeout, threshold,
+        action, anywhere, timeoutMs, onTimeout, threshold, foundGoto, failGoto,
     )
 
     fun toJson(): JSONObject = JSONObject().apply {
@@ -110,6 +114,8 @@ class ImageStep(
         put("tpl", Base64.encodeToString(bytes, Base64.NO_WRAP))
         put("action", action); put("anywhere", anywhere)
         put("timeout", timeoutMs); put("onTimeout", onTimeout); put("threshold", threshold.toDouble())
+        foundGoto?.let { put("foundGoto", it) }
+        failGoto?.let { put("failGoto", it) }
     }
 
     companion object {
@@ -118,6 +124,7 @@ class ImageStep(
         const val ACTION_GONE = 2
         const val ON_TIMEOUT_STOP = 0
         const val ON_TIMEOUT_SKIP = 1
+        const val ON_TIMEOUT_GOTO = 2
 
         fun fromJson(o: JSONObject): ImageStep {
             val r = o.optJSONArray("rect")
@@ -138,8 +145,59 @@ class ImageStep(
                 timeoutMs = o.optLong("timeout", 15_000),
                 onTimeout = o.optInt("onTimeout", ON_TIMEOUT_STOP),
                 threshold = o.optDouble("threshold", 0.82).toFloat(),
+                foundGoto = o.optString("foundGoto", "").ifEmpty { null },
+                failGoto = o.optString("failGoto", "").ifEmpty { null },
             )
         }
+    }
+}
+
+/**
+ * Control step: a named [LABEL], a [GOTO] that jumps to a label (optionally a limited number
+ * of times, which makes a loop), a random [WAIT], or [STOP] to end playback.
+ */
+class FlowStep(
+    override var at: Long,
+    var kind: Int,
+    /** LABEL: its own id. GOTO: the target label id. */
+    var ref: String = "",
+    /** LABEL: display name. */
+    var name: String = "",
+    /** GOTO: how many times to jump before continuing (0 = always). */
+    var count: Int = 0,
+    /** WAIT: random wait between [minMs] and [maxMs]. */
+    var minMs: Long = 1000,
+    var maxMs: Long = 1000,
+) : Step {
+    override val duration: Long get() = if (kind == WAIT) minMs else 0
+
+    fun copy(newAt: Long = at) = FlowStep(newAt, kind, ref, name, count, minMs, maxMs)
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("at", at); put("kind", kind)
+        if (ref.isNotEmpty()) put("ref", ref)
+        if (name.isNotEmpty()) put("name", name)
+        if (count != 0) put("count", count)
+        if (kind == WAIT) { put("min", minMs); put("max", maxMs) }
+    }
+
+    companion object {
+        const val LABEL = 0
+        const val GOTO = 1
+        const val WAIT = 2
+        const val STOP = 3
+
+        fun newId(): String = java.util.UUID.randomUUID().toString().take(8)
+
+        fun fromJson(o: JSONObject) = FlowStep(
+            at = o.optLong("at"),
+            kind = o.optInt("kind", LABEL),
+            ref = o.optString("ref", ""),
+            name = o.optString("name", ""),
+            count = o.optInt("count", 0),
+            minMs = o.optLong("min", 1000),
+            maxMs = o.optLong("max", 1000),
+        )
     }
 }
 
@@ -149,13 +207,25 @@ class Recording(
     val created: Long,
     val gestures: MutableList<RecGesture>,
     val images: MutableList<ImageStep> = mutableListOf(),
+    val flows: MutableList<FlowStep> = mutableListOf(),
 ) {
     /** Lapisan gelap saat diputar (0..1), dipakai untuk mengoreksi warna saat mencocokkan gambar. Tidak disimpan. */
     var dim: Float = 0f
 
-    /** Semua langkah urut waktu; pada waktu yang sama, langkah gambar lebih dulu. */
+    /** Semua langkah urut waktu; pada waktu yang sama: label, langkah gambar/alur, lalu gerakan. */
     fun steps(): List<Step> =
-        (images + gestures).sortedWith(compareBy<Step>({ it.at }, { if (it is ImageStep) 0 else 1 }))
+        (flows + images + gestures).sortedWith(compareBy<Step>({ it.at }, {
+            when {
+                it is FlowStep && it.kind == FlowStep.LABEL -> 0
+                it is RecGesture -> 2
+                else -> 1
+            }
+        }))
+
+    /** Labels by id. */
+    fun labels(): List<FlowStep> = steps().filterIsInstance<FlowStep>().filter { it.kind == FlowStep.LABEL }
+
+    fun labelName(id: String?): String? = flows.firstOrNull { it.kind == FlowStep.LABEL && it.ref == id }?.name
 
     val hasImages: Boolean get() = images.any { it.ready }
 
@@ -192,6 +262,7 @@ class Recording(
             }
         })
         if (images.isNotEmpty()) put("images", JSONArray().apply { images.forEach { put(it.toJson()) } })
+        if (flows.isNotEmpty()) put("flow", JSONArray().apply { flows.forEach { put(it.toJson()) } })
     }
 
     companion object {
@@ -226,12 +297,17 @@ class Recording(
             o.optJSONArray("images")?.let { ia ->
                 for (i in 0 until ia.length()) runCatching { imgs.add(ImageStep.fromJson(ia.getJSONObject(i))) }
             }
+            val fl = mutableListOf<FlowStep>()
+            o.optJSONArray("flow")?.let { fa ->
+                for (i in 0 until fa.length()) runCatching { fl.add(FlowStep.fromJson(fa.getJSONObject(i))) }
+            }
             return Recording(
                 o.optString("id", java.util.UUID.randomUUID().toString()),
                 o.optString("name", "Recording"),
                 o.optLong("created", 0L),
                 gs,
                 imgs,
+                fl,
             ).also { it.dim = o.optDouble("dim", 0.0).toFloat() }
         }
     }

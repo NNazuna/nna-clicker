@@ -46,6 +46,12 @@ The app falls back to the Standard engine automatically if Shizuku is unavailabl
 - Test an image step on the live screen and see how well it matches
 - On-device matching with a color check; nothing is uploaded
 
+**Flow**
+- Labels and **Go to** steps for loops inside a recording, every time or a set number of times
+- If / else with images: go to a label, continue, skip, or stop when an image is found or not found
+- **Check once** image steps that branch without waiting
+- Random waits and a **Stop playback** step
+
 **Controls**
 - Draggable floating panel with record, play, and stop; switch recordings from the panel or shrink it to a bubble
 - Quick Settings tile to show or hide the panel
@@ -67,6 +73,26 @@ The app falls back to the Standard engine automatically if Shizuku is unavailabl
 4. Choose what happens when it's found: **Wait for it**, **Tap it**, or **Wait until gone**.
 
 Screenshots taken outside a recording can be added with **Add image step** in the editor.
+
+## Flow steps
+
+Add these with **Add step** in the editor:
+
+| Step | What it does |
+| --- | --- |
+| **Label** | Marks a place in the recording that other steps can jump to |
+| **Go to label** | Jumps to a label, every time or a set number of times, then continues |
+| **Wait** | Waits a fixed or random time |
+| **Stop playback** | Ends playback |
+
+Image steps can branch too: under **If found** and **If not found**, choose the next step, a label, or (when not found) stop. Set **Give up after** to 0 to check the screen once without waiting.
+
+Example: repeat a battle until a reward screen shows up.
+
+1. **Label** "Battle"
+2. Taps to start the battle
+3. Image step: **Wait for** the reward screen, give up after 60 s, **If not found → Battle**
+4. Taps to collect the reward
 
 Image steps use Shizuku's screen capture when it is connected. Without Shizuku they need Android 11 or later and run at about three checks per second.
 

@@ -269,7 +269,7 @@ class Kit(private val a: Activity) {
     }
 }
 
-enum class Icon { RECORD, STOP, PLAY, LIST, CLOSE, GRIP, MORE, BACK, CAMERA, IMAGE, TRASH }
+enum class Icon { RECORD, STOP, PLAY, LIST, CLOSE, GRIP, MORE, BACK, CAMERA, IMAGE, TRASH, FLAG, JUMP, CLOCK }
 
 /** Ikon digambar langsung di canvas supaya tajam & konsisten di semua ROM (tanpa emoji). */
 class IconDrawable(private val kind: Icon, color: Int, private val size: Int) : Drawable() {
@@ -348,6 +348,33 @@ class IconDrawable(private val kind: Icon, color: Int, private val size: Int) : 
                     lineTo(cx + s * 0.19f, cy - s * 0.12f)
                 }
                 c.drawPath(path, stroke)
+            }
+            Icon.FLAG -> {
+                c.drawLine(cx - s * 0.20f, cy - s * 0.30f, cx - s * 0.20f, cy + s * 0.30f, stroke)
+                val path = Path().apply {
+                    moveTo(cx - s * 0.20f, cy - s * 0.28f)
+                    lineTo(cx + s * 0.26f, cy - s * 0.16f)
+                    lineTo(cx - s * 0.20f, cy - s * 0.02f)
+                    close()
+                }
+                c.drawPath(path, fill)
+            }
+            Icon.JUMP -> {
+                // A loop-back arrow: down, across, up, with the head pointing up.
+                val path = Path().apply {
+                    moveTo(cx + s * 0.18f, cy - s * 0.10f)
+                    lineTo(cx + s * 0.18f, cy + s * 0.24f)
+                    lineTo(cx - s * 0.18f, cy + s * 0.24f)
+                    lineTo(cx - s * 0.18f, cy - s * 0.24f)
+                }
+                c.drawPath(path, stroke)
+                c.drawLine(cx - s * 0.18f, cy - s * 0.26f, cx - s * 0.30f, cy - s * 0.12f, stroke)
+                c.drawLine(cx - s * 0.18f, cy - s * 0.26f, cx - s * 0.06f, cy - s * 0.12f, stroke)
+            }
+            Icon.CLOCK -> {
+                c.drawCircle(cx, cy, s * 0.28f, stroke)
+                c.drawLine(cx, cy, cx, cy - s * 0.16f, stroke)
+                c.drawLine(cx, cy, cx + s * 0.12f, cy + s * 0.06f, stroke)
             }
             Icon.BACK -> {
                 val path = Path().apply {

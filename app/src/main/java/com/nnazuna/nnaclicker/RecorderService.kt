@@ -74,6 +74,10 @@ class RecorderService : AccessibilityService() {
     /** Lapisan gelap saat memutar (tidak menangkap sentuhan) + menjaga layar tetap menyala. */
     private var dimView: View? = null
     private var playStartedAt = 0L
+    /** Playback position shown on the panel. */
+    private var playLoopNow = 1
+    private var playStepNow = -1
+    private var playTotal = 0
 
     // Perekaman
     private var capture: CaptureView? = null
@@ -108,7 +112,10 @@ class RecorderService : AccessibilityService() {
                         finishPlaying()
                     } else {
                         val loops = storage.loops
-                        status.text = loopText(loop, loops)
+                        val stepNow = try { ShizukuBridge.backend?.playStep() ?: -1 } catch (e: Exception) { -1 }
+                        playLoopNow = loop
+                        playStepNow = stepNow
+                        status.text = playText(loops)
                         handler.postDelayed(this, 300)
                     }
                 }
@@ -663,7 +670,7 @@ class RecorderService : AccessibilityService() {
 
     private fun startPlaying() {
         val rec = storage.selected()
-        if (rec == null || (rec.gestures.isEmpty() && !rec.hasImages)) {
+        if (rec == null || Program(rec).isEmpty) {
             toast("No recording selected")
             return
         }
@@ -674,6 +681,9 @@ class RecorderService : AccessibilityService() {
         state = State.PLAYING
         updatePanel()
         status.text = "Starting…"
+        playTotal = Program(rec).steps.size
+        playLoopNow = 1
+        playStepNow = -1
         showDim()
         playStartedAt = SystemClock.uptimeMillis()
         val maxMin = storage.maxMinutes
@@ -708,7 +718,8 @@ class RecorderService : AccessibilityService() {
             startDelayMs = storage.startDelayMs,
             jitterPx = storage.jitterPx,
             jitterPct = storage.jitterPct,
-            onLoop = { n -> status.text = loopText(n, loops) },
+            onLoop = { n -> playLoopNow = n; status.text = playText(loops) },
+            onStep = { i -> playStepNow = i; status.text = playText(loops) },
             onFinish = { err ->
                 if (err != null) toast(err)
                 finishPlaying()
@@ -733,7 +744,10 @@ class RecorderService : AccessibilityService() {
         }
     }
 
-    private fun loopText(n: Int, loops: Int): String = if (loops == 0) "Loop $n" else "Loop $n/$loops"
+    private fun playText(loops: Int): String {
+        val loopPart = if (loops == 0) "Loop $playLoopNow" else "Loop $playLoopNow/$loops"
+        return if (playStepNow >= 0 && playTotal > 0) "$loopPart · ${playStepNow + 1}/$playTotal" else loopPart
+    }
 
     private fun showDim() {
         if (dimView != null) return

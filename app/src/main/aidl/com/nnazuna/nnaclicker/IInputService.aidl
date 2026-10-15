@@ -21,4 +21,7 @@ interface IInputService {
 
     // Full-resolution PNG of the screen, base64; read it with readResult(). Returns its length.
     int snap() = 12;
+
+    // Index of the step being played, or -1.
+    int playStep() = 13;
 }

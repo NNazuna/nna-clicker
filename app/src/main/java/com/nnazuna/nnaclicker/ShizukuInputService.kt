@@ -49,5 +49,6 @@ class ShizukuInputService() : IInputService.Stub() {
 
     override fun stopPlay() = engine.stopPlay()
     override fun playLoop(): Int = engine.playLoop()
+    override fun playStep(): Int = engine.playStep()
     override fun lastError(): String = engine.lastError()
 }

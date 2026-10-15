@@ -3,6 +3,19 @@
 All notable changes to NNA Clicker are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Flow steps: **Label**, **Go to label**, **Wait**, and **Stop playback**. Add them with **Add step** in the editor.
+- Loops inside a recording: **Go to** jumps to a label every time or a set number of times, then continues.
+- If / else with images: each image step can continue, stop, skip, or go to a label, separately for found and not found.
+- **Check once** for image steps (give up after 0 s): look at the screen once and branch without waiting.
+- Random waits: wait a random time between two values.
+- The panel shows the current step while playing.
+
+### Changed
+- Both engines run recordings through the same step program, so jumps and branches behave the same with and without Shizuku.
+
 ## [1.3.0] - 2026-10-15
 
 ### Added

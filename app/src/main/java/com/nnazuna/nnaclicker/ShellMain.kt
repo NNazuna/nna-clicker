@@ -54,6 +54,7 @@ object ShellMain {
                     }
                     "STOP" -> { engine.stopPlay(); ok() }
                     "LOOP" -> ok(engine.playLoop().toString())
+                    "STEP" -> ok(engine.playStep().toString())
                     "ERR" -> ok(engine.lastError())
                     "SNAP" -> engine.snapPng()?.let {
                         ok(android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP))

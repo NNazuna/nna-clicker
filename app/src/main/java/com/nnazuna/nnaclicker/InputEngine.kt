@@ -43,6 +43,7 @@ class InputEngine {
     // --- putar ---
     @Volatile private var playing = false
     @Volatile private var currentLoop = -1
+    @Volatile private var currentStep = -1
     private var playThread: Thread? = null
     @Volatile private var injectFailed = false
 
@@ -195,6 +196,9 @@ class InputEngine {
 
     fun playLoop(): Int = if (playing) currentLoop else -1
 
+    /** Index of the step being played, or -1. */
+    fun playStep(): Int = if (playing) currentStep else -1
+
     fun stopPlay() {
         // Thread pemutar mengecek flag ini minimal tiap 100 ms lalu melepas jari yang masih menempel.
         playing = false
@@ -215,11 +219,12 @@ class InputEngine {
         }
         lastErr = ""
         injectFailed = false
-        val steps = rec.steps().filter { it !is ImageStep || it.ready }
-        if (steps.isEmpty() || injector == null) return false
+        val prog = Program(rec)
+        if (prog.isEmpty || injector == null) return false
         val sp = speed.coerceIn(0.1f, 10f)
         playing = true
         currentLoop = 1
+        currentStep = 0
         playThread = thread(name = "player", isDaemon = true) {
             val rnd = Random()
             try {
@@ -227,16 +232,23 @@ class InputEngine {
                 var loop = 1
                 while (playing && (loops == 0 || loop <= loops)) {
                     currentLoop = loop
-                    var prevEnd = -1L
+                    prog.reset()
+                    var i = 0
+                    var first = true
+                    var instant = 0
                     var wallEnd = SystemClock.uptimeMillis()
-                    for ((i, st) in steps.withIndex()) {
-                        if (!playing) break
-                        if (prevEnd >= 0) {
-                            var gap = (st.at - prevEnd).coerceAtLeast(0L).toDouble()
+                    while (playing && i in prog.steps.indices) {
+                        val st = prog.steps[i]
+                        currentStep = i
+                        // The delay before a step is skipped right after a jump.
+                        if (!first && !prog.jumped) {
+                            var gap = prog.gaps[i].toDouble()
                             if (jitterPct > 0) gap *= 1 + (rnd.nextDouble() * 2 - 1) * jitterPct / 100.0
                             sleepUntil(wallEnd + (gap / sp).toLong())
                         }
+                        first = false
                         if (!playing) break
+                        var found = true
                         when (st) {
                             is RecGesture -> {
                                 val gg = if (jitterPx > 0) st.shifted(
@@ -244,17 +256,31 @@ class InputEngine {
                                     ((rnd.nextDouble() * 2 - 1) * jitterPx).toFloat(),
                                 ) else st
                                 wallEnd = inject(gg, sp)
+                                instant = 0
                             }
                             is ImageStep -> {
-                                val ok = waitImage(st, rec.dim, jitterPx, rnd)
-                                if (!ok && playing && st.onTimeout == ImageStep.ON_TIMEOUT_STOP) {
-                                    lastErr = "Image not found at step ${i + 1}. Playback stopped."
-                                    playing = false
-                                }
+                                found = waitImage(st, rec.dim, jitterPx, rnd)
+                                wallEnd = SystemClock.uptimeMillis()
+                                instant = 0
+                            }
+                            is FlowStep -> {
+                                if (st.kind == FlowStep.WAIT) {
+                                    sleepFor((prog.waitMs(st, rnd) / sp).toLong())
+                                    instant = 0
+                                } else instant++
                                 wallEnd = SystemClock.uptimeMillis()
                             }
                         }
-                        prevEnd = st.at + st.duration
+                        if (!playing) break
+                        val n = prog.next(i, found)
+                        if (n == Program.STOP) {
+                            if (st is ImageStep) lastErr = "Image not found at step ${i + 1}. Playback stopped."
+                            playing = false
+                            break
+                        }
+                        // A loop made only of labels and jumps would spin; give it a breather.
+                        if (instant > 50) { sleepFor(100); instant = 0 }
+                        i = n
                     }
                     loop++
                     if (playing && (loops == 0 || loop <= loops)) sleepFor(intervalMs)
@@ -264,6 +290,7 @@ class InputEngine {
             } finally {
                 playing = false
                 currentLoop = -1
+                currentStep = -1
             }
         }
         return true

@@ -409,7 +409,8 @@ class MainActivity : Activity() {
             }
             col.addView(k.text(r.name, 16f, if (isSel) 2 else 1))
                         col.addView(k.text(
-                "${r.gestures.size} actions" + (if (r.images.isNotEmpty()) ", ${r.images.size} image" else "") + "  ·  ${Ui.fmtSec(r.length)}  ·  ${fmt.format(Date(r.created))}",
+                "${r.gestures.size} actions" + (if (r.images.isNotEmpty()) ", ${r.images.size} image" else "") +
+                    (if (r.flows.isNotEmpty()) ", ${r.flows.size} flow" else "") + "  ·  ${Ui.fmtSec(r.length)}  ·  ${fmt.format(Date(r.created))}",
                 13f, 0, p.muted,
             ).apply { setPadding(0, k.dp(3f), 0, 0); fontFeatureSettings = "tnum" })
             row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -497,8 +498,8 @@ class MainActivity : Activity() {
                 REQ_IMPORT -> {
                     val text = contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } ?: return
                     val r = Recording.fromJson(JSONObject(text))
-                    if (r.gestures.isEmpty()) { toast("No actions in this file"); return }
-                    val copy = Recording(UUID.randomUUID().toString(), r.name, System.currentTimeMillis(), r.gestures)
+                    if (r.steps().isEmpty()) { toast("No actions in this file"); return }
+                    val copy = Recording(UUID.randomUUID().toString(), r.name, System.currentTimeMillis(), r.gestures, r.images, r.flows)
                     storage.save(copy)
                     storage.selectedId = copy.id
                     toast("Imported: ${copy.name}")

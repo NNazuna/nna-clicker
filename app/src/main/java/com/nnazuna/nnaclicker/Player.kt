@@ -7,9 +7,10 @@ import android.os.Looper
 import android.os.SystemClock
 
 /**
- * Memutar ulang sebuah [Recording] lewat aksesibilitas: jeda antar langkah sama seperti saat direkam
- * (dibagi [speed]), diulang [loops] kali (0 = tanpa batas) dengan jeda [intervalMs] antar ulangan.
- * Langkah gambar memakai screenshot aksesibilitas (Android 11+).
+ * Plays a [Recording] through the accessibility service, step by step via [Program]:
+ * delays as recorded (divided by [speed]), labels and jumps, image branches, waits, and stop.
+ * The whole recording repeats [loops] times (0 = forever) with [intervalMs] between rounds.
+ * Image steps use the accessibility screenshot (Android 11+).
  */
 class Player(
     private val svc: AccessibilityService,
@@ -23,20 +24,24 @@ class Player(
     private val onLoop: (Int) -> Unit,
     /** Called once when playback ends; [error] is set when it stopped because of a problem. */
     private val onFinish: (error: String?) -> Unit,
+    /** Called when a new step starts (index into the program's steps). */
+    private val onStep: (Int) -> Unit = {},
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val rnd = java.util.Random()
-    private val steps: List<Step> = rec.steps().filter { it !is ImageStep || it.ready }
+    val program = Program(rec)
+    private val steps get() = program.steps
 
     private fun rand(range: Float): Float = ((rnd.nextDouble() * 2 - 1) * range).toFloat()
     private var loop = 0
     private var idx = 0
+    private var instant = 0
     private var error: String? = null
     var running = false
         private set
 
     fun start() {
-        if (steps.isEmpty()) { onFinish(null); return }
+        if (program.isEmpty) { onFinish(null); return }
         if (steps.any { it is ImageStep } && Build.VERSION.SDK_INT < 30) {
             onFinish("Image steps need Android 11 or later, or Shizuku")
             return
@@ -44,6 +49,7 @@ class Player(
         running = true
         loop = 1
         idx = 0
+        program.reset()
         onLoop(loop)
         handler.postDelayed({ step() }, startDelayMs)
     }
@@ -57,10 +63,11 @@ class Player(
 
     private fun step() {
         if (!running) return
-        if (idx >= steps.size) {
+        if (idx !in steps.indices) {
             if (loops == 0 || loop < loops) {
                 loop++
                 idx = 0
+                program.reset()
                 onLoop(loop)
                 handler.postDelayed({ step() }, intervalMs)
             } else {
@@ -68,12 +75,24 @@ class Player(
             }
             return
         }
+        onStep(idx)
         when (val st = steps[idx]) {
             is RecGesture -> {
+                instant = 0
                 val g = if (jitterPx > 0) st.shifted(rand(jitterPx), rand(jitterPx)) else st
-                GestureRunner.run(svc, g, speed, handler, { running }) { next() }
+                GestureRunner.run(svc, g, speed, handler, { running }) { done(true) }
             }
-            is ImageStep -> waitImage(st, SystemClock.uptimeMillis() + st.timeoutMs)
+            is ImageStep -> {
+                instant = 0
+                waitImage(st, SystemClock.uptimeMillis() + st.timeoutMs)
+            }
+            is FlowStep -> when (st.kind) {
+                FlowStep.WAIT -> {
+                    instant = 0
+                    handler.postDelayed({ done(true) }, (program.waitMs(st, rnd) / speed).toLong())
+                }
+                else -> { instant++; done(true) }
+            }
         }
     }
 
@@ -84,22 +103,17 @@ class Player(
             val m = frame?.let { ImageMatcher.find(it, st, rec.dim) }
             handler.post {
                 if (!running) return@post
-                val done = when (st.action) {
+                val ok = when (st.action) {
                     ImageStep.ACTION_GONE -> frame != null && m == null
                     else -> m != null
                 }
                 when {
-                    done && st.action == ImageStep.ACTION_TAP && m != null -> {
+                    ok && st.action == ImageStep.ACTION_TAP && m != null -> {
                         val j = minOf(jitterPx, st.w / 4f)
-                        GestureRunner.run(svc, RecGesture.tap(m.x + rand(j), m.y + rand(j)), 1f, handler, { running }) { next() }
+                        GestureRunner.run(svc, RecGesture.tap(m.x + rand(j), m.y + rand(j)), 1f, handler, { running }) { done(true) }
                     }
-                    done -> next()
-                    SystemClock.uptimeMillis() >= deadline -> {
-                        if (st.onTimeout == ImageStep.ON_TIMEOUT_STOP) {
-                            error = "Image not found at step ${idx + 1}. Playback stopped."
-                            stop()
-                        } else next()
-                    }
+                    ok -> done(true)
+                    SystemClock.uptimeMillis() >= deadline -> done(false)
                     // Accessibility screenshots are rate-limited, so poll at about 3 per second.
                     else -> handler.postDelayed({ waitImage(st, deadline) }, 340)
                 }
@@ -107,15 +121,28 @@ class Player(
         }
     }
 
-    private fun next() {
+    /** The current step finished; [found] is the image result for image steps. */
+    private fun done(found: Boolean) {
         if (!running) return
         val cur = steps[idx]
-        idx++
-        val wait = if (idx < steps.size) {
-            var gap = (steps[idx].at - (cur.at + cur.duration)).toFloat()
-            if (jitterPct > 0) gap *= 1 + rand(jitterPct) / 100f
-            (gap / speed).toLong().coerceAtLeast(0L)
-        } else 0L
-        handler.postDelayed({ step() }, wait)
+        val n = program.next(idx, found)
+        if (n == Program.STOP) {
+            if (cur is ImageStep) error = "Image not found at step ${idx + 1}. Playback stopped."
+            stop()
+            return
+        }
+        idx = n
+        val wait = when {
+            idx !in steps.indices -> 0L
+            program.jumped -> 0L
+            else -> {
+                var gap = program.gaps[idx].toFloat()
+                if (jitterPct > 0) gap *= 1 + rand(jitterPct) / 100f
+                (gap / speed).toLong().coerceAtLeast(0L)
+            }
+        }
+        // A loop made only of labels and jumps would spin; give it a breather.
+        val pause = if (instant > 50) { instant = 0; 100L } else 0L
+        handler.postDelayed({ step() }, wait + pause)
     }
 }
