@@ -29,7 +29,7 @@ object FlowUi {
         val steps = rec.steps()
         val labels = rec.labels()
         if (labels.isEmpty()) {
-            AlertDialog.Builder(a, Ui.dialogTheme(p))
+            TBuilder(a, Ui.dialogTheme(p))
                 .setTitle("No labels yet")
                 .setMessage("Add a Label step where the jump should land. Use Add step in the editor, then choose Label.")
                 .setPositiveButton("OK", null)
@@ -37,7 +37,7 @@ object FlowUi {
             return
         }
         val names = labels.map { "${it.name}  ·  step ${steps.indexOf(it) + 1}" }.toTypedArray()
-        AlertDialog.Builder(a, Ui.dialogTheme(p))
+        TBuilder(a, Ui.dialogTheme(p))
             .setTitle(title)
             .setSingleChoiceItems(names, labels.indexOfFirst { it.ref == current }) { d, which ->
                 d.dismiss()
@@ -50,7 +50,7 @@ object FlowUi {
     /** Dialog with one text field. */
     fun textDialog(a: Activity, p: Pal, title: String, value: String, onOk: (String) -> Unit) {
         val input = field(a, value, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES)
-        AlertDialog.Builder(a, Ui.dialogTheme(p))
+        TBuilder(a, Ui.dialogTheme(p))
             .setTitle(title)
             .setView(box(a, p, null, listOf(null to input)))
             .setPositiveButton("Save") { _, _ -> onOk(input.text.toString().trim()) }
@@ -65,7 +65,7 @@ object FlowUi {
     ) {
         val type = if (decimal) InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL else InputType.TYPE_CLASS_NUMBER
         val inputs = fields.map { (label, v) -> label to field(a, v, type) }
-        AlertDialog.Builder(a, Ui.dialogTheme(p))
+        TBuilder(a, Ui.dialogTheme(p))
             .setTitle(title)
             .setView(box(a, p, help, inputs))
             .setPositiveButton("Save") { _, _ -> onOk(inputs.map { it.second.text.toString().trim().replace(',', '.') }) }
@@ -101,16 +101,16 @@ object FlowUi {
             .sortedBy { it.second.lowercase() }
         if (apps.isEmpty()) return
         AlertDialog.Builder(a, Ui.dialogTheme(p))
-            .setTitle("Open app")
+            .setTitle(L.t("Open app"))
             .setItems(apps.map { it.second }.toTypedArray()) { _, which -> onPick(apps[which].first, apps[which].second) }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(L.t("Cancel"), null)
             .show()
     }
 
     /** Pick a system button for a KEY step. */
     fun pickKey(a: Activity, p: Pal, onPick: (String) -> Unit) {
         val keys = listOf(FlowStep.KEY_BACK, FlowStep.KEY_HOME, FlowStep.KEY_RECENTS)
-        AlertDialog.Builder(a, Ui.dialogTheme(p))
+        TBuilder(a, Ui.dialogTheme(p))
             .setTitle("System button")
             .setItems(keys.map { FlowStep.keyName(it) }.toTypedArray()) { _, which -> onPick(keys[which]) }
             .setNegativeButton("Cancel", null)
@@ -137,7 +137,7 @@ object FlowUi {
         }
 
     private fun note(a: Activity, p: Pal, s: String) = TextView(a).apply {
-        text = s
+        text = L.t(s)
         typeface = Ui.font(a)
         setTextColor(p.muted)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)

@@ -39,6 +39,9 @@ class Player(
     private var error: String? = null
     var running = false
         private set
+    /** While paused, the next step waits; a gesture that already started still finishes. */
+    var paused = false
+    private var bestScore = -1f
 
     fun start() {
         if (program.isEmpty) { onFinish(null); return }
@@ -63,6 +66,7 @@ class Player(
 
     private fun step() {
         if (!running) return
+        if (paused) { handler.postDelayed({ step() }, 100); return }
         if (idx !in steps.indices) {
             if (loops == 0 || loop < loops) {
                 loop++
@@ -84,6 +88,7 @@ class Player(
             }
             is ImageStep -> {
                 instant = 0
+                bestScore = -1f
                 waitImage(st, SystemClock.uptimeMillis() + st.timeoutMs)
             }
             is FlowStep -> when (st.kind) {
@@ -118,10 +123,13 @@ class Player(
     /** Poll the screen until the image step is satisfied or times out. */
     private fun waitImage(st: ImageStep, deadline: Long) {
         if (!running) return
+        if (paused) { handler.postDelayed({ waitImage(st, deadline + 200) }, 200); return }
         A11yCapture.frame(svc) { frame ->
-            val m = frame?.let { ImageMatcher.find(it, st, rec.dim) }
+            val d = ImageMatcher.Diag()
+            val m = frame?.let { ImageMatcher.find(it, st, rec.dim, d) }
             handler.post {
                 if (!running) return@post
+                bestScore = maxOf(bestScore, d.best)
                 val ok = when (st.action) {
                     ImageStep.ACTION_GONE -> frame != null && m == null
                     else -> m != null
@@ -146,7 +154,7 @@ class Player(
         val cur = steps[idx]
         val n = program.next(idx, found)
         if (n == Program.STOP) {
-            if (cur is ImageStep) error = "Image not found at step ${idx + 1}. Playback stopped."
+            if (cur is ImageStep) error = Program.notFoundText(idx, cur, bestScore)
             stop()
             return
         }

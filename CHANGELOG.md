@@ -3,6 +3,19 @@
 All notable changes to NNA Clicker are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] - 2026-10-16
+
+### Added
+- **Bahasa Indonesia.** The app follows the phone's language, or choose it under **App › Language** (Same as phone, English, Bahasa Indonesia).
+- **Tutorial**: a short guide on first launch, also under **App › Tutorial**.
+- **Pause and resume** on the floating panel. Waits and delays stop counting while paused, and playback continues from the same step.
+- **Run log**: when an image step stops playback, the screen at that moment is saved with the closest match. Open it from the main screen to see what went wrong and fix the step: use that screenshot, lower the match, search the whole screen, or wait longer.
+- **Settings per recording**: turn on **Only for this recording** under Playback to give the selected recording its own repeat, speed, delays, auto stop, and randomization.
+
+### Changed
+- The "image not found" message now shows the closest match and the match needed.
+- Auto stop doesn't count time while paused.
+
 ## [2.1.0] - 2026-10-16
 
 ### Added

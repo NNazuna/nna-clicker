@@ -56,6 +56,15 @@ class MainActivity : Activity() {
     private lateinit var dimLevelRow: View
     private lateinit var dimLevelValue: TextView
 
+    /** Playback options being shown: the selected recording's own, or the global ones. */
+    private var cfg = PlaySettings()
+    private var cfgRec: Recording? = null
+    private lateinit var scopeTitle: TextView
+    private lateinit var scopeSub: TextView
+    private lateinit var scopeSwitch: Switch
+    private var suppressScope = false
+    private lateinit var langValue: TextView
+
     private var exportId: String? = null
     private var dimDivider: View? = null
     private var suppressSwitch = false
@@ -88,7 +97,7 @@ class MainActivity : Activity() {
         val status = k.group()
         status.addView(statusRow("Accessibility service").also {
             a11yDot = it.dot; a11ySub = it.sub; a11yAction = it.action
-            a11yAction.text = "Open"
+            a11yAction.text = L.t("Open")
             a11yAction.setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         }.view)
         status.addView(k.divider(40f))
@@ -147,12 +156,39 @@ class MainActivity : Activity() {
         })
         links.addView(k.textButton("Screenshots", p.play) {
             SnapPicker.show(this, k, storage, "Screenshots", null)
+        }.apply { setPadding(k.dp(4f), k.dp(10f), k.dp(14f), k.dp(4f)) })
+        links.addView(k.textButton("Run log", p.play) {
+            startActivity(Intent(this, RunLogActivity::class.java))
         }.apply { setPadding(k.dp(4f), k.dp(10f), k.dp(4f), k.dp(4f)) })
-        root.addView(links)
+        root.addView(android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(links)
+        })
 
         // ---- Pemutaran ----
         root.addView(k.sectionHeader("Playback"))
         val play = k.group()
+
+        // Which recording these options are for.
+        val scopeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = k.dp(64f)
+            setPadding(k.dp(16f), k.dp(10f), k.dp(12f), k.dp(10f))
+        }
+        val scopeCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        scopeTitle = k.text("", 16f, 1)
+        scopeSub = k.text("", 13f, 0, p.muted).apply { setPadding(0, k.dp(3f), 0, 0) }
+        scopeCol.addView(scopeTitle)
+        scopeCol.addView(scopeSub)
+        scopeRow.addView(scopeCol, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        scopeSwitch = Switch(this).apply {
+            setOnCheckedChangeListener { _, on -> if (!suppressScope) setOwnSettings(on) }
+        }
+        scopeRow.addView(scopeSwitch)
+        scopeRow.setOnClickListener { scopeSwitch.toggle() }
+        play.addView(scopeRow)
+        play.addView(k.divider())
 
         // Ulangi: stepper
         val loopRow = LinearLayout(this).apply {
@@ -164,18 +200,18 @@ class MainActivity : Activity() {
         val loopLeft = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         loopLeft.addView(k.text("Repeat", 16f, 1))
         loopRow.addView(loopLeft, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        loopRow.addView(stepButton("−") { storage.loops = (storage.loops - 1).coerceAtLeast(0); refreshSettings() })
+        loopRow.addView(stepButton("−") { cfg.loops = (cfg.loops - 1).coerceAtLeast(0); saveCfg() })
         loopsValue = k.text("", 18f, 2).apply {
             gravity = Gravity.CENTER
             minWidth = k.dp(44f)
             fontFeatureSettings = "tnum"
             setOnClickListener {
-                Ui.numberDialog(this@MainActivity, p, "Repeat", storage.loops.toString(), false,
-                    "0 = infinite") { v -> v.toIntOrNull()?.let { storage.loops = it }; refreshSettings() }
+                Ui.numberDialog(this@MainActivity, p, "Repeat", cfg.loops.toString(), false,
+                    "0 = infinite") { v -> v.toIntOrNull()?.let { cfg.loops = it }; saveCfg() }
             }
         }
         loopRow.addView(loopsValue)
-        loopRow.addView(stepButton("+") { storage.loops = storage.loops + 1; refreshSettings() })
+        loopRow.addView(stepButton("+") { cfg.loops = cfg.loops + 1; saveCfg() })
         play.addView(loopRow)
         play.addView(k.divider())
 
@@ -197,28 +233,28 @@ class MainActivity : Activity() {
         play.addView(k.divider())
 
         intervalValue = addRow(play, "Delay between loops") {
-            Ui.numberDialog(this, p, "Delay between loops (seconds)", (storage.intervalMs / 1000.0).toString(), true) { v ->
-                v.toDoubleOrNull()?.let { storage.intervalMs = (it * 1000).toLong() }; refreshSettings()
+            Ui.numberDialog(this, p, "Delay between loops (seconds)", (cfg.intervalMs / 1000.0).toString(), true) { v ->
+                v.toDoubleOrNull()?.let { cfg.intervalMs = (it * 1000).toLong() }; saveCfg()
             }
         }
         startValue = addRow(play, "Start delay") {
-            Ui.numberDialog(this, p, "Start delay (seconds)", (storage.startDelayMs / 1000.0).toString(), true) { v ->
-                v.toDoubleOrNull()?.let { storage.startDelayMs = (it * 1000).toLong() }; refreshSettings()
+            Ui.numberDialog(this, p, "Start delay (seconds)", (cfg.startDelayMs / 1000.0).toString(), true) { v ->
+                v.toDoubleOrNull()?.let { cfg.startDelayMs = (it * 1000).toLong() }; saveCfg()
             }
         }
         limitValue = addRow(play, "Auto stop") {
-            Ui.numberDialog(this, p, "Auto stop after (minutes)", storage.maxMinutes.toString(), false, "0 = off") { v ->
-                v.toIntOrNull()?.let { storage.maxMinutes = it }; refreshSettings()
+            Ui.numberDialog(this, p, "Auto stop after (minutes)", cfg.maxMinutes.toString(), false, "0 = off") { v ->
+                v.toIntOrNull()?.let { cfg.maxMinutes = it }; saveCfg()
             }
         }
         jitterPxValue = addRow(play, "Randomize position") {
-            Ui.numberDialog(this, p, "Randomize position (± px)", trim(storage.jitterPx), true, "0 = off") { v ->
-                v.toFloatOrNull()?.let { storage.jitterPx = it }; refreshSettings()
+            Ui.numberDialog(this, p, "Randomize position (± px)", trim(cfg.jitterPx), true, "0 = off") { v ->
+                v.toFloatOrNull()?.let { cfg.jitterPx = it }; saveCfg()
             }
         }
         jitterPctValue = addRow(play, "Randomize timing") {
-            Ui.numberDialog(this, p, "Randomize timing (± %)", trim(storage.jitterPct), true, "0 = off") { v ->
-                v.toFloatOrNull()?.let { storage.jitterPct = it }; refreshSettings()
+            Ui.numberDialog(this, p, "Randomize timing (± %)", trim(cfg.jitterPct), true, "0 = off") { v ->
+                v.toFloatOrNull()?.let { cfg.jitterPct = it }; saveCfg()
             }
         }
         val (alertRow, _) = k.switchRow("Alert when finished", storage.alertDone) { on -> storage.alertDone = on }
@@ -241,8 +277,17 @@ class MainActivity : Activity() {
         }
         root.addView(play)
 
+        // ---- App ----
+        root.addView(k.sectionHeader("App"))
+        val app = k.group()
+        langValue = addRow(app, "Language") { pickLanguage() }
+        addRow(app, "Tutorial", "How to record, play, and edit", last = true) {
+            startActivity(Intent(this, TutorialActivity::class.java))
+        }
+        root.addView(app)
 
-        // First launch: walk through the switches before anything else.
+
+        // First launch: walk through the switches before anything else (the tutorial follows, see onResume).
         if (savedInstanceState == null && !storage.setupSeen && RecorderService.instance == null) {
             startActivity(Intent(this, SetupActivity::class.java))
         }
@@ -298,7 +343,7 @@ class MainActivity : Activity() {
 
     /** Simple auto clicker: one tap or swipe repeated until stopped. */
     private fun newAutoClicker() {
-        AlertDialog.Builder(this, Ui.dialogTheme(p))
+        TBuilder(this, Ui.dialogTheme(p))
             .setTitle("Auto clicker")
             .setItems(arrayOf("Tap one spot", "Swipe")) { _, which ->
                 startActivity(
@@ -310,6 +355,26 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun pickLanguage() {
+        val codes = arrayOf("auto", "en", "id")
+        val names = arrayOf(L.t("Same as phone"), "English", "Bahasa Indonesia")
+        TBuilder(this, Ui.dialogTheme(p))
+            .setTitle(L.t("Language"))
+            .setSingleChoiceItems(names, codes.indexOf(storage.language).coerceAtLeast(0)) { d, which ->
+                d.dismiss()
+                storage.language = codes[which]
+                L.load(this)
+                recreate()
+            }
+            .show()
+    }
+
+    private fun langName(): String = when (storage.language) {
+        "en" -> "English"
+        "id" -> "Bahasa Indonesia"
+        else -> L.t("Same as phone")
+    }
+
     private fun trim(f: Float): String = if (f == f.toLong().toFloat()) f.toLong().toString() else f.toString()
 
     // ---------- siklus hidup ----------
@@ -319,6 +384,11 @@ class MainActivity : Activity() {
         RecorderService.onChanged = { runOnUiThread { refresh() } }
         ShizukuBridge.onChanged = { runOnUiThread { refresh() } }
         refresh()
+        // Show the short tutorial once, after the setup guide.
+        if ((storage.setupSeen || RecorderService.instance != null) && !storage.tutorialSeen) {
+            storage.tutorialSeen = true
+            startActivity(Intent(this, TutorialActivity::class.java))
+        }
     }
 
     override fun onPause() {
@@ -332,18 +402,18 @@ class MainActivity : Activity() {
         val svc = RecorderService.instance
         if (svc != null) {
             setDot(a11yDot, p.play)
-            a11ySub.text = "On"
+            a11ySub.text = L.t("On")
             a11yAction.visibility = View.GONE
         } else {
             setDot(a11yDot, p.rec)
-            a11ySub.text = "Off"
+            a11ySub.text = L.t("Off")
             a11yAction.visibility = View.VISIBLE
         }
-        panelButton.text = when {
+        panelButton.text = L.t(when {
             svc == null -> "Turn on accessibility service"
             svc.isPanelShown -> "Hide panel"
             else -> "Show panel"
-        }
+        })
         panelButton.background = k.ripple(k.rounded(if (svc?.isPanelShown == true) p.muted else p.play, 26f), k.dp(26f).toFloat())
 
         // Shizuku
@@ -362,9 +432,9 @@ class MainActivity : Activity() {
             else -> Pair(p.rec, "Connection failed")
         }
         setDot(shzDot, color)
-        shzSub.text = msg
+        shzSub.text = L.t(msg)
         shzAction.visibility = if (storage.useShizuku && running && (!perm || (!connected && !ShizukuBridge.connecting))) View.VISIBLE else View.GONE
-        shzAction.text = if (!perm) "Allow" else "Retry"
+        shzAction.text = L.t(if (!perm) "Allow" else "Retry")
         val diag = if (storage.useShizuku) ShizukuBridge.diagnostics() else ""
         shzDiag.text = diag
         shzDiag.visibility = if (diag.isEmpty()) View.GONE else View.VISIBLE
@@ -373,27 +443,61 @@ class MainActivity : Activity() {
         renderList()
     }
 
+    private fun loadCfg() {
+        val sel = storage.selected()
+        cfgRec = sel?.takeIf { it.settings != null }
+        cfg = cfgRec?.settings ?: storage.globalSettings()
+        suppressScope = true
+        scopeSwitch.isChecked = cfgRec != null
+        scopeSwitch.isEnabled = sel != null
+        suppressScope = false
+        scopeTitle.text = L.t("Only for this recording")
+        scopeSub.text = when {
+            sel == null -> L.t("Record something first")
+            cfgRec != null -> L.t("Used only by “{}”", sel.name)
+            else -> L.t("Off: these settings are used by all recordings")
+        }
+    }
+
+    /** Save the shown options where they belong, then show them again. */
+    private fun saveCfg() {
+        val r = cfgRec
+        if (r != null) storage.save(r) else storage.saveGlobal(cfg)
+        refreshSettings()
+    }
+
+    /** Give the selected recording its own copy of the options, or go back to the global ones. */
+    private fun setOwnSettings(on: Boolean) {
+        val sel = storage.selected() ?: return
+        sel.settings = if (on) storage.globalSettings() else null
+        storage.save(sel)
+        refreshSettings()
+        renderList()
+    }
+
     private fun refreshSettings() {
-        loopsValue.text = if (storage.loops == 0) "∞" else storage.loops.toString()
-        intervalValue.text = Ui.fmtSec(storage.intervalMs)
-        startValue.text = Ui.fmtSec(storage.startDelayMs)
-        limitValue.text = if (storage.maxMinutes == 0) "Off" else "${storage.maxMinutes} min"
-        jitterPxValue.text = if (storage.jitterPx == 0f) "Off" else "± ${trim(storage.jitterPx)} px"
+        loadCfg()
+        langValue.text = langName()
+        loopsValue.text = if (cfg.loops == 0) "∞" else cfg.loops.toString()
+        intervalValue.text = Ui.fmtSec(cfg.intervalMs)
+        startValue.text = Ui.fmtSec(cfg.startDelayMs)
+        limitValue.text = if (cfg.maxMinutes == 0) L.t("Off") else L.t("{} min", cfg.maxMinutes)
+        jitterPxValue.text = if (cfg.jitterPx == 0f) L.t("Off") else "± ${trim(cfg.jitterPx)} px"
         dimLevelValue.text = "${storage.dimLevel}%"
         val dimVis = if (storage.dimScreen) View.VISIBLE else View.GONE
         dimLevelRow.visibility = dimVis
         dimDivider?.visibility = dimVis
-        jitterPctValue.text = if (storage.jitterPct == 0f) "Off" else "± ${trim(storage.jitterPct)} %"
+        jitterPctValue.text = if (cfg.jitterPct == 0f) L.t("Off") else "± ${trim(cfg.jitterPct)} %"
 
         speedBox.removeAllViews()
         for (sp in SPEEDS) {
-            val selected = kotlin.math.abs(storage.speed - sp) < 0.01f
+            val selected = kotlin.math.abs(cfg.speed - sp) < 0.01f
             val label = (if (sp == sp.toInt().toFloat()) sp.toInt().toString() else sp.toString().replace('.', ',')) + "×"
             val t = k.text(label, 15f, if (selected) 2 else 1, if (selected) p.onAccent else p.ink).apply {
                 gravity = Gravity.CENTER
                 setPadding(0, k.dp(9f), 0, k.dp(9f))
                 background = if (selected) k.rounded(p.ink.let { if (p.dark) p.play else it }, 8f) else k.ripple(null, k.dp(8f).toFloat())
-                setOnClickListener { storage.speed = sp; refreshSettings() }
+                setOnClickListener { cfg.speed = sp; saveCfg() }
             }
             speedBox.addView(t, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
@@ -422,7 +526,7 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER_VERTICAL
                 minimumHeight = k.dp(64f)
                 background = k.ripple(null)
-                setOnClickListener { storage.selectedId = r.id; renderList() }
+                setOnClickListener { storage.selectedId = r.id; refreshSettings(); renderList() }
                 setOnLongClickListener { menu(it, r); true }
             }
             // Penanda rekaman terpilih: garis merah di kiri.
@@ -437,7 +541,7 @@ class MainActivity : Activity() {
             val loops = r.flows.any { it.kind == FlowStep.GOTO }
             col.addView(k.text(
                 "${r.steps().size} steps" + (if (r.images.isNotEmpty()) " · ${r.images.size} image" else "") +
-                    (if (loops) " · repeats" else "") + "  ·  ${Ui.fmtSec(r.length)}  ·  ${fmt.format(Date(r.created))}",
+                    (if (loops) " · repeats" else "") + (if (r.settings != null) " · own settings" else "") + "  ·  ${Ui.fmtSec(r.length)}  ·  ${fmt.format(Date(r.created))}",
                 13f, 0, p.muted,
             ).apply { setPadding(0, k.dp(3f), 0, 0); fontFeatureSettings = "tnum" })
             row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -456,15 +560,15 @@ class MainActivity : Activity() {
 
     private fun menu(anchor: View, r: Recording) {
         PopupMenu(this, anchor, Gravity.END).apply {
-            menu.add(0, 1, 0, "Select")
-            menu.add(0, 2, 1, "Edit")
-            menu.add(0, 3, 2, "Rename")
-            menu.add(0, 6, 3, "Duplicate")
-            menu.add(0, 4, 3, "Export")
-            menu.add(0, 5, 4, "Delete")
+            menu.add(0, 1, 0, L.t("Select"))
+            menu.add(0, 2, 1, L.t("Edit"))
+            menu.add(0, 3, 2, L.t("Rename"))
+            menu.add(0, 6, 3, L.t("Duplicate"))
+            menu.add(0, 4, 3, L.t("Export"))
+            menu.add(0, 5, 4, L.t("Delete"))
             setOnMenuItemClickListener {
                 when (it.itemId) {
-                    1 -> { storage.selectedId = r.id; renderList() }
+                    1 -> { storage.selectedId = r.id; refreshSettings(); renderList() }
                     2 -> openEditor(r)
                     6 -> duplicate(r)
                     3 -> rename(r)
@@ -495,7 +599,7 @@ class MainActivity : Activity() {
             setText(r.name); setSelection(r.name.length); typeface = Ui.font(this@MainActivity, 1)
         }
         val box = k.frame(input, 22f, 4f)
-        AlertDialog.Builder(this, Ui.dialogTheme(p))
+        TBuilder(this, Ui.dialogTheme(p))
             .setTitle("Rename")
             .setView(box)
             .setPositiveButton("Save") { _, _ ->
@@ -507,7 +611,7 @@ class MainActivity : Activity() {
     }
 
     private fun confirmDelete(r: Recording) {
-        AlertDialog.Builder(this, Ui.dialogTheme(p))
+        TBuilder(this, Ui.dialogTheme(p))
             .setTitle("Delete \"${r.name}\"?")
             .setPositiveButton("Delete") { _, _ -> storage.delete(r.id); renderList() }
             .setNegativeButton("Cancel", null)
@@ -556,5 +660,5 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
+    private fun toast(s: String) = LToast.makeText(this, s, Toast.LENGTH_SHORT).show()
 }

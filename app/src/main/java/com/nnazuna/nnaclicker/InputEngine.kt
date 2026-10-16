@@ -48,6 +48,11 @@ class InputEngine {
     @Volatile private var currentStep = -1
     private var playThread: Thread? = null
     @Volatile private var injectFailed = false
+    @Volatile private var paused = false
+    /** Closest match (0..1) of the image step being waited for, for the failure message. */
+    private var bestScore = -1f
+
+    fun setPaused(p: Boolean) { paused = p }
 
     private val injector: Pair<Any, Method>? by lazy {
         try {
@@ -221,6 +226,7 @@ class InputEngine {
         }
         lastErr = ""
         injectFailed = false
+        paused = false
         val prog = Program(rec)
         if (prog.isEmpty || injector == null) return false
         val sp = speed.coerceIn(0.1f, 10f)
@@ -242,6 +248,7 @@ class InputEngine {
                     while (playing && i in prog.steps.indices) {
                         val st = prog.steps[i]
                         currentStep = i
+                        while (playing && paused) Thread.sleep(50)
                         // The delay before a step is skipped right after a jump.
                         if (!first && !prog.jumped) {
                             var gap = prog.gaps[i].toDouble()
@@ -278,7 +285,7 @@ class InputEngine {
                         if (!playing) break
                         val n = prog.next(i, found)
                         if (n == Program.STOP) {
-                            if (st is ImageStep) lastErr = "Image not found at step ${i + 1}. Playback stopped."
+                            if (st is ImageStep) lastErr = notFoundMessage(i, st, bestScore)
                             playing = false
                             break
                         }
@@ -305,11 +312,15 @@ class InputEngine {
      * Returns false on timeout.
      */
     private fun waitImage(st: ImageStep, dim: Float, jitterPx: Float, rnd: Random): Boolean {
-        val deadline = SystemClock.uptimeMillis() + st.timeoutMs
+        var deadline = SystemClock.uptimeMillis() + st.timeoutMs
+        bestScore = -1f
         while (playing) {
+            if (paused) { Thread.sleep(100); deadline += 100; continue }
             val frame = ShellCapture.grab()
             if (frame != null) {
-                val m = ImageMatcher.find(frame, st, dim)
+                val d = ImageMatcher.Diag()
+                val m = ImageMatcher.find(frame, st, dim, d)
+                bestScore = maxOf(bestScore, d.best)
                 when (st.action) {
                     ImageStep.ACTION_GONE -> if (m == null) return true
                     ImageStep.ACTION_TAP -> if (m != null) {
@@ -325,6 +336,8 @@ class InputEngine {
         }
         return false
     }
+
+    private fun notFoundMessage(i: Int, st: ImageStep, best: Float) = Program.notFoundText(i, st, best)
 
     /** Press a system button: back, home, or recent apps. */
     private fun key(ref: String) {
@@ -365,9 +378,12 @@ class InputEngine {
 
     private fun sleepFor(ms: Long) = sleepUntil(SystemClock.uptimeMillis() + ms)
 
-    private fun sleepUntil(target: Long) {
+    /** Sleep until [target]; while paused the target moves later, so waits resume where they were. */
+    private fun sleepUntil(target: Long, pausable: Boolean = true) {
+        var t = target
         while (playing) {
-            val d = target - SystemClock.uptimeMillis()
+            if (pausable && paused) { Thread.sleep(50); t += 50; continue }
+            val d = t - SystemClock.uptimeMillis()
             if (d <= 0) return
             if (d > 3) Thread.sleep(minOf(d - 2, 100)) else Thread.yield()
         }
@@ -379,7 +395,8 @@ class InputEngine {
         val downTime = SystemClock.uptimeMillis()
         var last: Frame? = null
         for (f in frames) {
-            sleepUntil(downTime + (f.t / speed).toLong())
+            // Never pause in the middle of a gesture: the finger would stay down.
+            sleepUntil(downTime + (f.t / speed).toLong(), pausable = false)
             if (!playing) break
             send(downTime, f.action, f)
             last = f

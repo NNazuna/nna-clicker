@@ -59,6 +59,7 @@ class RecorderService : AccessibilityService() {
     private var panelParams: WindowManager.LayoutParams? = null
     private lateinit var btnRecord: ImageView
     private lateinit var btnPlay: ImageView
+    private lateinit var btnPause: ImageView
     private lateinit var btnSnap: ImageView
     private lateinit var btnApp: ImageView
     private lateinit var btnClose: ImageView
@@ -78,6 +79,11 @@ class RecorderService : AccessibilityService() {
     private var playLoopNow = 1
     private var playStepNow = -1
     private var playTotal = 0
+    private var paused = false
+    /** Options and recording of the current playback. */
+    private var playLoops = 1
+    private var playMaxMin = 0
+    private var playingRec: Recording? = null
 
     // Perekaman
     private var capture: CaptureView? = null
@@ -108,14 +114,12 @@ class RecorderService : AccessibilityService() {
                     val loop = try { ShizukuBridge.backend?.playLoop() ?: -1 } catch (e: Exception) { -1 }
                     if (loop < 0) {
                         val err = try { ShizukuBridge.backend?.lastError() ?: "" } catch (e: Exception) { "" }
-                        if (err.isNotEmpty()) toast(err)
-                        finishPlaying()
+                        finishPlaying(err.ifEmpty { null })
                     } else {
-                        val loops = storage.loops
                         val stepNow = try { ShizukuBridge.backend?.playStep() ?: -1 } catch (e: Exception) { -1 }
                         playLoopNow = loop
                         playStepNow = stepNow
-                        status.text = playText(loops)
+                        status.text = playText()
                         handler.postDelayed(this, 300)
                     }
                 }
@@ -129,6 +133,7 @@ class RecorderService : AccessibilityService() {
         instance = this
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         storage = Storage(this)
+        L.load(this)
         ShizukuBridge.init(this)
         if (storage.useShizuku) ShizukuBridge.connect()
         showPanel()
@@ -200,7 +205,7 @@ class RecorderService : AccessibilityService() {
         return dm.getDisplay(Display.DEFAULT_DISPLAY)?.rotation ?: 0
     }
 
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    private fun toast(msg: String) = LToast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
     private fun useShizukuNow(): Boolean = storage.useShizuku && ShizukuBridge.isConnected
 
@@ -243,6 +248,7 @@ class RecorderService : AccessibilityService() {
 
         btnRecord = iconButton { onRecordPressed() }
         btnPlay = iconButton { onPlayPressed() }
+        btnPause = iconButton { togglePause() }
         btnSnap = iconButton { snap() }
         btnSnap.setImageDrawable(IconDrawable(Icon.CAMERA, 0xE6FFFFFF.toInt(), dp(22f)))
 
@@ -354,7 +360,7 @@ class RecorderService : AccessibilityService() {
         pulse?.cancel()
         statusDot.alpha = 1f
         if (minimized) {
-            for (v in listOf(btnRecord, btnPlay, btnSnap, btnApp, btnClose, statusBox)) v.visibility = View.GONE
+            for (v in listOf(btnRecord, btnPlay, btnPause, btnSnap, btnApp, btnClose, statusBox)) v.visibility = View.GONE
             val color = when (state) {
                 State.RECORDING -> COLOR_REC
                 State.PLAYING -> COLOR_PLAY
@@ -370,6 +376,7 @@ class RecorderService : AccessibilityService() {
             State.IDLE -> {
                 setIcon(btnRecord, Icon.RECORD, COLOR_REC); btnRecord.visibility = View.VISIBLE
                 setIcon(btnPlay, Icon.PLAY, COLOR_PLAY); btnPlay.visibility = View.VISIBLE
+                btnPause.visibility = View.GONE
                 btnSnap.visibility = View.VISIBLE
                 btnApp.visibility = View.VISIBLE
                 btnClose.visibility = View.VISIBLE
@@ -378,6 +385,7 @@ class RecorderService : AccessibilityService() {
             State.RECORDING -> {
                 setIcon(btnRecord, Icon.STOP, 0xFFFFFFFF.toInt()); btnRecord.visibility = View.VISIBLE
                 btnPlay.visibility = View.GONE
+                btnPause.visibility = View.GONE
                 btnSnap.visibility = View.VISIBLE
                 btnApp.visibility = View.GONE
                 btnClose.visibility = View.GONE
@@ -394,13 +402,42 @@ class RecorderService : AccessibilityService() {
                 btnRecord.visibility = View.GONE
                 btnSnap.visibility = View.GONE
                 setIcon(btnPlay, Icon.STOP, 0xFFFFFFFF.toInt()); btnPlay.visibility = View.VISIBLE
+                setIcon(btnPause, if (paused) Icon.PLAY else Icon.PAUSE, if (paused) COLOR_PLAY else 0xFFFFFFFF.toInt())
+                btnPause.visibility = View.VISIBLE
                 btnApp.visibility = View.GONE
                 btnClose.visibility = View.GONE
                 statusBox.visibility = View.VISIBLE
-                (statusDot.background as GradientDrawable).setColor(COLOR_PLAY)
+                (statusDot.background as GradientDrawable).setColor(if (paused) 0xFFF2B33D.toInt() else COLOR_PLAY)
             }
         }
     }
+
+    /** Pause or resume playback from the panel. A gesture that already started still finishes. */
+    private fun togglePause() {
+        if (state != State.PLAYING) return
+        paused = !paused
+        if (shizukuActive) {
+            try { ShizukuBridge.backend?.setPaused(paused) } catch (_: Exception) {}
+        } else {
+            player?.paused = paused
+        }
+        // The auto stop timer doesn't count paused time.
+        if (paused) {
+            handler.removeCallbacks(limitStop)
+            pausedAt = SystemClock.uptimeMillis()
+        } else if (playMaxMin > 0) {
+            limitLeft -= pausedAt - limitFrom
+            limitFrom = SystemClock.uptimeMillis()
+            handler.postDelayed(limitStop, limitLeft.coerceAtLeast(0))
+        }
+        status.text = playText()
+        updatePanel()
+    }
+
+    private var pausedAt = 0L
+    /** Auto stop: time left (ms) as of [limitFrom]. */
+    private var limitLeft = 0L
+    private var limitFrom = 0L
 
     private fun setMinimized(on: Boolean) {
         minimized = on
@@ -436,7 +473,7 @@ class RecorderService : AccessibilityService() {
             }
         }
         fun row(label: String, color: Int, bold: Boolean, onClick: (() -> Unit)?) = TextView(this).apply {
-            text = label
+            text = L.t(label)
             setTextColor(color)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             typeface = Ui.font(this@RecorderService, if (bold) 2 else 1)
@@ -658,7 +695,7 @@ class RecorderService : AccessibilityService() {
             toast("Nothing recorded")
             return
         }
-        val name = "Recording " + SimpleDateFormat("MMM d, HH:mm:ss", Locale.US).format(Date())
+        val name = L.t("Recording {}", SimpleDateFormat("MMM d, HH:mm:ss", Locale.US).format(Date()))
         val rec = Recording(UUID.randomUUID().toString(), name, System.currentTimeMillis(), gestures, images)
         storage.save(rec)
         storage.selectedId = rec.id
@@ -690,28 +727,36 @@ class RecorderService : AccessibilityService() {
         }
         rec.startAt = fromAt
         stopByUser = false
-        val startDelay = maxOf(storage.startDelayMs, minDelayMs)
+        paused = false
+        playingRec = rec
+        val cfg = storage.settingsFor(rec)
+        playLoops = cfg.loops
+        playMaxMin = cfg.maxMinutes
+        val startDelay = maxOf(cfg.startDelayMs, minDelayMs)
         if (rec.images.any { !it.ready }) toast("Some image steps have no area yet and will be skipped")
         // Image matching corrects for the dim layer; keep it light enough to still see details.
         rec.dim = if (storage.dimScreen) dimFraction(rec) else 0f
-        val loops = storage.loops
+        val loops = cfg.loops
         state = State.PLAYING
         updatePanel()
-        status.text = "Starting…"
+        status.text = L.t("Starting…")
         playTotal = Program(rec).steps.size
         playLoopNow = 1
         playStepNow = -1
         showDim()
         playStartedAt = SystemClock.uptimeMillis()
-        val maxMin = storage.maxMinutes
-        if (maxMin > 0) handler.postDelayed(limitStop, maxMin * 60_000L)
+        if (playMaxMin > 0) {
+            limitLeft = playMaxMin * 60_000L
+            limitFrom = SystemClock.uptimeMillis()
+            handler.postDelayed(limitStop, limitLeft)
+        }
 
         if (useShizukuNow()) {
             val svc = ShizukuBridge.backend!!
             val ok = try {
                 svc.play(
-                    rec, loops, storage.speed, storage.intervalMs, startDelay,
-                    storage.jitterPx, storage.jitterPct,
+                    rec, loops, cfg.speed, cfg.intervalMs, startDelay,
+                    cfg.jitterPx, cfg.jitterPct,
                 )
             } catch (e: Exception) {
                 false
@@ -730,17 +775,14 @@ class RecorderService : AccessibilityService() {
             svc = this,
             rec = rec,
             loops = loops,
-            speed = storage.speed,
-            intervalMs = storage.intervalMs,
+            speed = cfg.speed,
+            intervalMs = cfg.intervalMs,
             startDelayMs = startDelay,
-            jitterPx = storage.jitterPx,
-            jitterPct = storage.jitterPct,
-            onLoop = { n -> playLoopNow = n; status.text = playText(loops) },
-            onStep = { i -> playStepNow = i; status.text = playText(loops) },
-            onFinish = { err ->
-                if (err != null) toast(err)
-                finishPlaying()
-            },
+            jitterPx = cfg.jitterPx,
+            jitterPct = cfg.jitterPct,
+            onLoop = { n -> playLoopNow = n; status.text = playText() },
+            onStep = { i -> playStepNow = i; status.text = playText() },
+            onFinish = { err -> finishPlaying(err) },
         ).also { it.start() }
     }
 
@@ -758,7 +800,7 @@ class RecorderService : AccessibilityService() {
     private val limitStop = Runnable {
         if (state == State.PLAYING) {
             stopPlaying(byUser = false)
-            toast("Auto stopped after ${storage.maxMinutes} min")
+            toast("Auto stopped after $playMaxMin min")
         }
     }
 
@@ -781,8 +823,9 @@ class RecorderService : AccessibilityService() {
         } catch (_: Exception) {}
     }
 
-    private fun playText(loops: Int): String {
-        val loopPart = if (loops == 0) "Loop $playLoopNow" else "Loop $playLoopNow/$loops"
+    private fun playText(): String {
+        if (paused) return L.t("Paused")
+        val loopPart = if (playLoops == 0) L.t("Loop {}", playLoopNow) else L.t("Loop {}", "$playLoopNow/$playLoops")
         return if (playStepNow >= 0 && playTotal > 0) "$loopPart · ${playStepNow + 1}/$playTotal" else loopPart
     }
 
@@ -886,7 +929,7 @@ class RecorderService : AccessibilityService() {
         dimView = null
     }
 
-    private fun finishPlaying() {
+    private fun finishPlaying(error: String? = null) {
         if (state != State.PLAYING) return
         if (!stopByUser && storage.alertDone) alert()
         hideDim()
@@ -894,9 +937,40 @@ class RecorderService : AccessibilityService() {
         handler.removeCallbacks(limitStop)
         player = null
         shizukuActive = false
+        paused = false
         state = State.IDLE
         updatePanel()
         onChanged?.invoke()
+        val rec = playingRec
+        playingRec = null
+        if (error != null) {
+            toast(error)
+            if (rec != null && !stopByUser) logFailure(rec, error)
+        }
+    }
+
+    /**
+     * Save the screen right after playback stopped with an error, so you can see what was
+     * on screen instead of the expected image, and fix the step from the run log.
+     */
+    private fun logFailure(rec: Recording, error: String) {
+        val (stepNo, closest, need) = RunLogEntry.parse(error)
+        val stepAt = Program(rec).steps.getOrNull(stepNo - 1)?.at ?: -1L
+        val editorNo = if (stepAt >= 0) rec.steps().indexOfFirst { it.at == stepAt } + 1 else stepNo
+        val entry = RunLogEntry(System.currentTimeMillis(), rec.id, rec.name, editorNo, stepAt, closest, need, error)
+        // Let the dim layer go away first, and keep the panel out of the picture.
+        handler.postDelayed({
+            panel?.visibility = View.INVISIBLE
+            handler.postDelayed({
+                captureScreen { png ->
+                    handler.post {
+                        panel?.visibility = View.VISIBLE
+                        Thread { runCatching { storage.addRunLog(entry, png) } }.start()
+                        onChanged?.invoke()
+                    }
+                }
+            }, 150)
+        }, 250)
     }
 
     /** Dipanggil dari tombol volume dan MainActivity. */

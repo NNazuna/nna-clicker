@@ -67,7 +67,7 @@ object SnapPicker {
                     background = k.ripple(null, k.dp(22f).toFloat())
                     setOnClickListener {
                         if (used > 0) {
-                            AlertDialog.Builder(a, Ui.dialogTheme(p))
+                            TBuilder(a, Ui.dialogTheme(p))
                                 .setTitle("Delete screenshot?")
                                 .setMessage("Image steps that use it keep working, but their area can't be changed without a new screenshot.")
                                 .setPositiveButton("Delete") { _, _ -> storage.deleteSnap(f.name); render() }
@@ -84,7 +84,7 @@ object SnapPicker {
         }
 
         render()
-        dialog = AlertDialog.Builder(a, Ui.dialogTheme(p))
+        dialog = TBuilder(a, Ui.dialogTheme(p))
             .setTitle(title)
             .setView(ScrollView(a).apply { addView(list) })
             .setNegativeButton("Close", null)
@@ -95,7 +95,7 @@ object SnapPicker {
                 val usage = storage.snapUsage()
                 val unused = storage.snaps().filter { (usage[it.name] ?: 0) == 0 }
                 if (unused.isEmpty()) return@setOnClickListener
-                AlertDialog.Builder(a, Ui.dialogTheme(p))
+                TBuilder(a, Ui.dialogTheme(p))
                     .setTitle("Delete ${unused.size} unused screenshot" + (if (unused.size > 1) "s" else "") + "?")
                     .setPositiveButton("Delete") { _, _ -> unused.forEach { storage.deleteSnap(it.name) }; render() }
                     .setNegativeButton("Cancel", null)

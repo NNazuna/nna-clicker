@@ -172,10 +172,10 @@ class EditorActivity : Activity() {
     private fun render() {
         steps = rec.steps()
         val extra = listOfNotNull(
-            rec.images.size.takeIf { it > 0 }?.let { "$it image" },
-            rec.flows.size.takeIf { it > 0 }?.let { "$it flow" },
+            rec.images.size.takeIf { it > 0 }?.let { L.t("{} image", it) },
+            rec.flows.size.takeIf { it > 0 }?.let { L.t("{} flow", it) },
         )
-        summary.text = "${steps.size} steps" + (if (extra.isNotEmpty()) " (${extra.joinToString(", ")})" else "") +
+        summary.text = L.t("{} steps", steps.size) + (if (extra.isNotEmpty()) " (${extra.joinToString(", ")})" else "") +
             "  ·  ${Ui.fmtSec(rec.length)}"
         listBox.removeAllViews()
         val loops = loopRanges()
@@ -388,7 +388,7 @@ class EditorActivity : Activity() {
             }
             FlowStep.GOTO -> {
                 val target = rec.labelName(s.ref)
-                AlertDialog.Builder(this, Ui.dialogTheme(p))
+                TBuilder(this, Ui.dialogTheme(p))
                     .setTitle("Go to")
                     .setItems(arrayOf(
                         "Label: ${target ?: "none"}",
@@ -424,25 +424,25 @@ class EditorActivity : Activity() {
 
     private fun stepMenu(anchor: View, i: Int) {
         PopupMenu(this, anchor, Gravity.END).apply {
-            if (steps[i] is ImageStep) menu.add(0, 4, 0, "Edit image")
+            if (steps[i] is ImageStep) menu.add(0, 4, 0, L.t("Edit image"))
             val g = steps[i] as? RecGesture
-            if (g != null && g.strokes.size == 1) menu.add(0, 8, 0, "Edit position")
+            if (g != null && g.strokes.size == 1) menu.add(0, 8, 0, L.t("Edit position"))
             (steps[i] as? FlowStep)?.let { f ->
                 when (f.kind) {
-                    FlowStep.LABEL -> menu.add(0, 10, 0, "Rename")
-                    FlowStep.GOTO, FlowStep.WAIT, FlowStep.KEY, FlowStep.LAUNCH -> menu.add(0, 10, 0, "Edit")
+                    FlowStep.LABEL -> menu.add(0, 10, 0, L.t("Rename"))
+                    FlowStep.GOTO, FlowStep.WAIT, FlowStep.KEY, FlowStep.LAUNCH -> menu.add(0, 10, 0, L.t("Edit"))
                     else -> {}
                 }
             }
-            menu.add(0, 9, 7, "Add step after")
-            menu.add(0, 11, 8, "Play from here")
-            menu.add(0, 12, 0, "Repeat steps…")
-            if (i > 0) menu.add(0, 5, 1, "Move up")
-            if (i < steps.size - 1) menu.add(0, 6, 2, "Move down")
-            if (steps.size > 2) menu.add(0, 7, 3, "Move to…")
-            if (i > 0) menu.add(0, 1, 4, "Edit delay")
-            menu.add(0, 2, 5, "Duplicate")
-            menu.add(0, 3, 6, "Delete")
+            menu.add(0, 9, 7, L.t("Add step after"))
+            menu.add(0, 11, 8, L.t("Play from here"))
+            menu.add(0, 12, 0, L.t("Repeat steps…"))
+            if (i > 0) menu.add(0, 5, 1, L.t("Move up"))
+            if (i < steps.size - 1) menu.add(0, 6, 2, L.t("Move down"))
+            if (steps.size > 2) menu.add(0, 7, 3, L.t("Move to…"))
+            if (i > 0) menu.add(0, 1, 4, L.t("Edit delay"))
+            menu.add(0, 2, 5, L.t("Duplicate"))
+            menu.add(0, 3, 6, L.t("Delete"))
             setOnMenuItemClickListener {
                 when (it.itemId) {
                     1 -> askGap(i)
@@ -496,7 +496,7 @@ class EditorActivity : Activity() {
 
     private fun delete(i: Int) {
         if (steps.size <= 1) {
-            AlertDialog.Builder(this, Ui.dialogTheme(p))
+            TBuilder(this, Ui.dialogTheme(p))
                 .setMessage("A recording needs at least one step.")
                 .setPositiveButton("OK", null).show()
             return
@@ -509,7 +509,7 @@ class EditorActivity : Activity() {
                     val users = rec.flows.count { it.kind == FlowStep.GOTO && it.ref == s.ref } +
                         rec.images.count { it.foundGoto == s.ref || it.failGoto == s.ref }
                     if (users > 0) {
-                        AlertDialog.Builder(this, Ui.dialogTheme(p))
+                        TBuilder(this, Ui.dialogTheme(p))
                             .setTitle("Delete ${s.name}?")
                             .setMessage("$users step(s) jump to this label. Image steps will continue with the next step instead, and Go to steps will need a new label.")
                             .setPositiveButton("Delete") { _, _ -> deleteLabel(s) }
@@ -628,7 +628,7 @@ class EditorActivity : Activity() {
                 box.addView(row)
             }
         }
-        dialog = AlertDialog.Builder(this, Ui.dialogTheme(p))
+        dialog = TBuilder(this, Ui.dialogTheme(p))
             .setTitle(title)
             .setView(ScrollView(this).apply { addView(box) })
             .setNegativeButton("Cancel", null)
@@ -658,7 +658,7 @@ class EditorActivity : Activity() {
             // Add the jump first so the step numbers for the label stay the same.
             insertAt(to + 1, jump, 0)
             insertAt(from, label, 0)
-            android.widget.Toast.makeText(this,
+            LToast.makeText(this,
                 if (times <= 0) "Steps ${from + 1}–${to + 1} repeat until stopped" else "Steps ${from + 1}–${to + 1} run $times times",
                 android.widget.Toast.LENGTH_SHORT).show()
         }
@@ -667,16 +667,16 @@ class EditorActivity : Activity() {
     private fun playFromStart() {
         val svc = RecorderService.instance
         if (svc == null) {
-            android.widget.Toast.makeText(this, "Turn on the accessibility service first", android.widget.Toast.LENGTH_SHORT).show()
+            LToast.makeText(this, "Turn on the accessibility service first", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
-        android.widget.Toast.makeText(this, "Open the game. Playing in 3 seconds…", android.widget.Toast.LENGTH_LONG).show()
+        LToast.makeText(this, "Open the game. Playing in 3 seconds…", android.widget.Toast.LENGTH_LONG).show()
         svc.playFrom(rec.id, -1)
         moveTaskToBack(true)
     }
 
     private fun showHelp() {
-        AlertDialog.Builder(this, Ui.dialogTheme(p))
+        TBuilder(this, Ui.dialogTheme(p))
             .setTitle("How steps work")
             .setMessage(
                 "Steps run from top to bottom. Tap a \"wait\" between steps to change the delay.\n\n" +
@@ -694,10 +694,10 @@ class EditorActivity : Activity() {
     private fun playFrom(i: Int) {
         val svc = RecorderService.instance
         if (svc == null) {
-            android.widget.Toast.makeText(this, "Turn on the accessibility service first", android.widget.Toast.LENGTH_SHORT).show()
+            LToast.makeText(this, "Turn on the accessibility service first", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
-        android.widget.Toast.makeText(this, "Open the game. Playing from step ${i + 1} in 3 seconds…", android.widget.Toast.LENGTH_LONG).show()
+        LToast.makeText(this, "Open the game. Playing from step ${i + 1} in 3 seconds…", android.widget.Toast.LENGTH_LONG).show()
         svc.playFrom(rec.id, steps[i].at)
         moveTaskToBack(true)
     }

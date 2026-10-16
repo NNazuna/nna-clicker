@@ -80,6 +80,14 @@ class Program(rec: Recording) {
     companion object {
         const val STOP = -1
 
+        /** Error text when an image step stops playback; [RecorderService] reads the numbers back. */
+        fun notFoundText(stepIndex: Int, st: ImageStep, best: Float): String {
+            val need = (st.threshold * 100).toInt()
+            val closest = (best * 100).toInt()
+            return if (best >= 0) "Image not found at step ${stepIndex + 1} (closest $closest%, needs $need%). Playback stopped."
+            else "Image not found at step ${stepIndex + 1}. Playback stopped."
+        }
+
         /** Steps that take no time; a loop of only these gets a short pause so it can't spin the CPU. */
         fun isInstant(s: Step) = s is FlowStep && s.kind in INSTANT
 

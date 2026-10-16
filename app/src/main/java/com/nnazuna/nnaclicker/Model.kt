@@ -214,6 +214,43 @@ class FlowStep(
     }
 }
 
+/** Playback options. Global ones live in [Storage]; a recording can keep its own copy. */
+class PlaySettings(
+    loops: Int = 1,
+    speed: Float = 1f,
+    intervalMs: Long = 1000,
+    startDelayMs: Long = 1000,
+    maxMinutes: Int = 0,
+    jitterPx: Float = 0f,
+    jitterPct: Float = 0f,
+) {
+    /** 0 = repeat until stopped. */
+    var loops = loops; set(v) { field = v.coerceAtLeast(0) }
+    var speed = speed; set(v) { field = v.coerceIn(0.1f, 10f) }
+    var intervalMs = intervalMs; set(v) { field = v.coerceAtLeast(0L) }
+    var startDelayMs = startDelayMs; set(v) { field = v.coerceAtLeast(0L) }
+    /** Auto stop after this many minutes (0 = off). */
+    var maxMinutes = maxMinutes; set(v) { field = v.coerceIn(0, 24 * 60) }
+    var jitterPx = jitterPx; set(v) { field = v.coerceIn(0f, 200f) }
+    var jitterPct = jitterPct; set(v) { field = v.coerceIn(0f, 90f) }
+
+    fun copy() = PlaySettings(loops, speed, intervalMs, startDelayMs, maxMinutes, jitterPx, jitterPct)
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("loops", loops); put("speed", speed.toDouble()); put("interval", intervalMs)
+        put("startDelay", startDelayMs); put("maxMinutes", maxMinutes)
+        put("jitterPx", jitterPx.toDouble()); put("jitterPct", jitterPct.toDouble())
+    }
+
+    companion object {
+        fun fromJson(o: JSONObject) = PlaySettings(
+            o.optInt("loops", 1), o.optDouble("speed", 1.0).toFloat(), o.optLong("interval", 1000),
+            o.optLong("startDelay", 1000), o.optInt("maxMinutes", 0),
+            o.optDouble("jitterPx", 0.0).toFloat(), o.optDouble("jitterPct", 0.0).toFloat(),
+        )
+    }
+}
+
 class Recording(
     val id: String,
     var name: String,
@@ -227,6 +264,9 @@ class Recording(
 
     /** Play from the first step at or after this time (first loop only); -1 = from the start. Not saved. */
     var startAt: Long = -1
+
+    /** Playback options for this recording only; null = use the global ones. */
+    var settings: PlaySettings? = null
 
     /** Semua langkah urut waktu; pada waktu yang sama: label, langkah gambar/alur, lalu gerakan. */
     fun steps(): List<Step> =
@@ -259,6 +299,7 @@ class Recording(
         put("created", created)
         if (dim > 0f) put("dim", dim.toDouble())
         if (startAt >= 0) put("startAt", startAt)
+        settings?.let { put("settings", it.toJson()) }
         put("gestures", JSONArray().apply {
             for (g in gestures) {
                 put(JSONObject().apply {
@@ -328,6 +369,7 @@ class Recording(
             ).also {
                 it.dim = o.optDouble("dim", 0.0).toFloat()
                 it.startAt = o.optLong("startAt", -1)
+                it.settings = o.optJSONObject("settings")?.let { s -> PlaySettings.fromJson(s) }
             }
         }
     }

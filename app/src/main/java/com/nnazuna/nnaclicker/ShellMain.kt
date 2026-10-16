@@ -19,6 +19,8 @@ import kotlin.system.exitProcess
  *   <json rekaman satu baris>    -> @@OK | @@ERR <pesan>
  *   STOP                         -> @@OK
  *   LOOP                         -> @@OK <n>   (-1 = tidak sedang memutar)
+ *   STEP                         -> @@OK <index langkah>
+ *   PAUSE <1|0>                  -> @@OK
  *   ERR                          -> @@OK <pesan error terakhir>
  *   SNAP                         -> @@OK <PNG base64>
  *   EXIT
@@ -55,6 +57,7 @@ object ShellMain {
                     "STOP" -> { engine.stopPlay(); ok() }
                     "LOOP" -> ok(engine.playLoop().toString())
                     "STEP" -> ok(engine.playStep().toString())
+                    "PAUSE" -> { engine.setPaused(p.getOrNull(1) == "1"); ok() }
                     "ERR" -> ok(engine.lastError())
                     "SNAP" -> engine.snapPng()?.let {
                         ok(android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP))

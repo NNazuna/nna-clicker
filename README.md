@@ -34,6 +34,7 @@ The app falls back to the Standard engine automatically if Shizuku is unavailabl
 - Taps, swipes, holds, and multi-finger gestures (up to 10 pointers)
 - Portrait and landscape support, including rotation-aware Shizuku recording
 - Repeat count or infinite loop, speed from 0.5× to 3×, delay between loops, start delay
+- Use the same settings for all recordings, or give a recording its own
 - Auto stop after a set number of minutes
 - Optional randomization of touch position and timing
 
@@ -59,6 +60,7 @@ The app falls back to the Standard engine automatically if Shizuku is unavailabl
 - **Alert when finished**: vibrate and sound when playback ends or stops with an error
 
 **Controls**
+- Pause and resume from the panel; playback continues from the same step
 - Draggable floating panel with record, play, and stop; switch recordings from the panel or shrink it to a bubble
 - Quick Settings tile to show or hide the panel
 - Volume Down stops recording or playback at any time
@@ -68,7 +70,12 @@ The app falls back to the Standard engine automatically if Shizuku is unavailabl
 - Step editor: add taps and swipes on a screenshot, edit positions, reorder steps, change delays, duplicate or delete steps
 - Import and export recordings as JSON
 
+**Troubleshooting**
+- Run log: the screen is saved when an image step stops playback, with one-tap fixes
+
 **Interface**
+- English and Bahasa Indonesia
+- Short tutorial on first launch
 - Light and dark themes that follow the system setting
 
 ## Image steps
@@ -131,7 +138,7 @@ Image steps use Shizuku's screen capture when it is connected. Without Shizuku t
 
 ## Privacy
 
-NNA Clicker has no network access. Touch input is only read while a recording is in progress. The screen is captured only when you press the camera button or while a recording with image steps is playing, and the images never leave the device.
+NNA Clicker has no network access. Touch input is only read while a recording is in progress. The screen is captured only when you press the camera button, while a recording with image steps is playing, or once when playback stops with an error (for the run log). The images never leave the device.
 
 ## Building from source
 

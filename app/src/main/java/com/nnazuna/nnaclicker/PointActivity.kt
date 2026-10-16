@@ -245,7 +245,7 @@ class PointActivity : Activity() {
 
     private fun save() {
         if (swipe && hypot(points[1].x - points[0].x, points[1].y - points[0].y) < 20f) {
-            Toast.makeText(this, "Move START and END further apart", Toast.LENGTH_SHORT).show()
+            LToast.makeText(this, "Move START and END further apart", Toast.LENGTH_SHORT).show()
             return
         }
         if (auto) { saveAuto(); return }
@@ -269,7 +269,7 @@ class PointActivity : Activity() {
             rec.gestures.add(g)
         }
         storage.save(rec)
-        Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
+        LToast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
         finish()
     }
 
@@ -282,7 +282,7 @@ class PointActivity : Activity() {
         rec.name = (if (swipe) "Auto swipe" else "Auto tap") + " · every ${FlowUi.sec(everyMs)}"
         storage.save(rec)
         storage.selectedId = rec.id
-        Toast.makeText(this, "Saved and selected. Open the game and press play on the panel.", Toast.LENGTH_LONG).show()
+        LToast.makeText(this, "Saved and selected. Open the game and press play on the panel.", Toast.LENGTH_LONG).show()
         finish()
     }
 }

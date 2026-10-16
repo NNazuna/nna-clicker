@@ -298,7 +298,7 @@ class PointView(ctx: Context, bmp: Bitmap, val points: MutableList<PointF>, priv
             c.drawCircle(x, y, r, ring)
             c.drawCircle(x, y, 2.5f * density, labelBg)
             if (points.size == 2) {
-                val t = if (i == 0) "START" else "END"
+                val t = L.t(if (i == 0) "START" else "END")
                 val ty = y - r - 8 * density
                 val w = label.measureText(t) / 2 + 6 * density
                 c.drawRoundRect(x - w, ty - 13 * density, x + w, ty + 4 * density, 6 * density, 6 * density, labelBg)

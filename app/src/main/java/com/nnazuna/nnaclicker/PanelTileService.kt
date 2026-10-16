@@ -63,11 +63,12 @@ class PanelTileService : TileService() {
         }
         tile.label = "NNA Clicker"
         if (Build.VERSION.SDK_INT >= 29) {
-            tile.subtitle = when {
+            L.load(this)
+            tile.subtitle = L.t(when {
                 svc == null -> "Off"
                 svc.isPanelShown -> "Panel on"
                 else -> "Panel off"
-            }
+            })
         }
         tile.updateTile()
     }

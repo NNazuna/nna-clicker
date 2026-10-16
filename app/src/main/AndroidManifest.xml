@@ -46,6 +46,14 @@
             android:name=".SetupActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".RunLogActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".TutorialActivity"
+            android:exported="false" />
+
         <!-- Required by Shizuku to deliver its binder -->
         <provider
             android:name="rikka.shizuku.ShizukuProvider"

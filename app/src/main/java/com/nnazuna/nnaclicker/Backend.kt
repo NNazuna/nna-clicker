@@ -16,6 +16,7 @@ interface InputBackend {
     fun stopPlay()
     fun playLoop(): Int
     fun playStep(): Int
+    fun setPaused(paused: Boolean)
     fun lastError(): String
     /** Full-resolution PNG of the screen. */
     fun snap(): ByteArray?
@@ -69,6 +70,7 @@ class BinderBackend(private val s: IInputService) : InputBackend {
     override fun stopPlay() = s.stopPlay()
     override fun playLoop() = s.playLoop()
     override fun playStep() = s.playStep()
+    override fun setPaused(paused: Boolean) = s.setPaused(paused)
     override fun lastError(): String = s.lastError() ?: ""
     override fun close() {}
 }
@@ -156,6 +158,7 @@ class ProcessBackend private constructor(private val proc: Process) : InputBacke
     override fun stopPlay() { guard(Unit) { call("STOP"); Unit } }
     override fun playLoop() = guard(-1) { call("LOOP").toInt() }
     override fun playStep() = guard(-1) { call("STEP").toInt() }
+    override fun setPaused(paused: Boolean) { guard(Unit) { call(if (paused) "PAUSE 1" else "PAUSE 0"); Unit } }
     override fun lastError(): String {
         val remote = guard("") { call("ERR") }
         return remote.ifEmpty { lastLocalErr }

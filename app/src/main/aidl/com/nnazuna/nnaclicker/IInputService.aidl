@@ -24,4 +24,7 @@ interface IInputService {
 
     // Index of the step being played, or -1.
     int playStep() = 13;
+
+    // Pause or resume playback (waits and delays stop counting while paused).
+    void setPaused(boolean paused) = 14;
 }

@@ -92,6 +92,7 @@ object Ui {
     /** Status bar & navigation bar mengikuti warna latar. */
     @Suppress("DEPRECATION")
     fun styleWindow(a: Activity, p: Pal) {
+        L.load(a)
         a.window.statusBarColor = p.bg
         a.window.navigationBarColor = p.bg
         a.window.decorView.setBackgroundColor(p.bg)
@@ -122,14 +123,14 @@ object Ui {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(a, 22f), dp(a, 8f), dp(a, 22f), 0)
             if (help != null) addView(TextView(a).apply {
-                text = help
+                text = L.t(help)
                 typeface = font(a)
                 setTextColor(p.muted)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             })
             addView(input)
         }
-        AlertDialog.Builder(a, dialogTheme(p))
+        TBuilder(a, dialogTheme(p))
             .setTitle(title)
             .setView(box)
             .setPositiveButton("Save") { _, _ -> onOk(input.text.toString().trim().replace(',', '.')) }
@@ -146,7 +147,7 @@ class Kit(private val a: Activity) {
     fun dp(v: Float) = Ui.dp(a, v)
 
     fun text(s: String, sizeSp: Float = 15f, weight: Int = 0, color: Int = p.ink) = TextView(a).apply {
-        text = s
+        text = L.t(s)
         typeface = Ui.font(a, weight)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
         setTextColor(color)
@@ -269,7 +270,7 @@ class Kit(private val a: Activity) {
     }
 }
 
-enum class Icon { RECORD, STOP, PLAY, LIST, CLOSE, GRIP, MORE, BACK, CAMERA, IMAGE, TRASH, FLAG, JUMP, CLOCK, TAP, SWIPE }
+enum class Icon { RECORD, STOP, PLAY, LIST, CLOSE, GRIP, MORE, BACK, CAMERA, IMAGE, TRASH, FLAG, JUMP, CLOCK, TAP, SWIPE, PAUSE }
 
 /** Ikon digambar langsung di canvas supaya tajam & konsisten di semua ROM (tanpa emoji). */
 class IconDrawable(private val kind: Icon, color: Int, private val size: Int) : Drawable() {
@@ -370,6 +371,11 @@ class IconDrawable(private val kind: Icon, color: Int, private val size: Int) : 
                 c.drawPath(path, stroke)
                 c.drawLine(cx - s * 0.18f, cy - s * 0.26f, cx - s * 0.30f, cy - s * 0.12f, stroke)
                 c.drawLine(cx - s * 0.18f, cy - s * 0.26f, cx - s * 0.06f, cy - s * 0.12f, stroke)
+            }
+            Icon.PAUSE -> {
+                val h = s * 0.24f; val w = s * 0.11f; val off = s * 0.12f
+                c.drawRoundRect(RectF(cx - off - w / 2, cy - h, cx - off + w / 2, cy + h), w / 3, w / 3, fill)
+                c.drawRoundRect(RectF(cx + off - w / 2, cy - h, cx + off + w / 2, cy + h), w / 3, w / 3, fill)
             }
             Icon.TAP -> {
                 c.drawCircle(cx, cy, s * 0.10f, fill)

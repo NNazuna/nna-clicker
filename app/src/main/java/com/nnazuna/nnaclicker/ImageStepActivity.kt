@@ -214,8 +214,8 @@ class ImageStepActivity : Activity() {
         fill(actionBox, listOf("Wait for it", "Tap it", "Wait until gone"), step.action) { step.action = it }
         fill(searchBox, listOf("Near this spot", "Anywhere"), if (step.anywhere) 1 else 0) { step.anywhere = it == 1 }
         val gone = step.action == ImageStep.ACTION_GONE
-        rowLabel(foundBox).text = if (gone) "If gone" else "If found"
-        rowLabel(failBox).text = if (gone) "If still there" else "If not found"
+        rowLabel(foundBox).text = L.t(if (gone) "If gone" else "If found")
+        rowLabel(failBox).text = L.t(if (gone) "If still there" else "If not found")
         fill(foundBox, listOf("Next step", gotoText(step.foundGoto)), if (step.foundGoto != null) 1 else 0) { i ->
             if (i == 0) step.foundGoto = null
             else FlowUi.pickLabel(this, p, rec, step.foundGoto, "Then go to") { step.foundGoto = it; refresh() }
@@ -227,7 +227,7 @@ class ImageStepActivity : Activity() {
                 step.failGoto = it; step.onTimeout = ImageStep.ON_TIMEOUT_GOTO; refresh()
             }
         }
-        timeoutValue.text = if (step.timeoutMs <= 0) "Check once" else "${step.timeoutMs / 1000} s"
+        timeoutValue.text = if (step.timeoutMs <= 0) L.t("Check once") else "${step.timeoutMs / 1000} s"
         matchValue.text = "${(step.threshold * 100).toInt()}%"
     }
 
@@ -262,7 +262,7 @@ class ImageStepActivity : Activity() {
         if (bmp != null && cv != null) {
             val r = cv.selection()
             if (r.width() < 16 || r.height() < 16) {
-                Toast.makeText(this, "Select a bigger area", Toast.LENGTH_SHORT).show()
+                LToast.makeText(this, "Select a bigger area", Toast.LENGTH_SHORT).show()
                 return null
             }
             val px = IntArray(bmp.width * bmp.height)
@@ -272,7 +272,7 @@ class ImageStepActivity : Activity() {
             target.screenW = bmp.width; target.screenH = bmp.height
             target.tw = t.w; target.th = t.h; target.tpl = t.rgb
         } else if (!target.ready) {
-            Toast.makeText(this, "Pick a screenshot first", Toast.LENGTH_SHORT).show()
+            LToast.makeText(this, "Pick a screenshot first", Toast.LENGTH_SHORT).show()
             return null
         }
         return target
@@ -281,7 +281,7 @@ class ImageStepActivity : Activity() {
     private fun save() {
         buildStep(apply = true) ?: return
         storage.save(rec)
-        Toast.makeText(this, "Image step saved", Toast.LENGTH_SHORT).show()
+        LToast.makeText(this, "Image step saved", Toast.LENGTH_SHORT).show()
         finish()
     }
 
@@ -297,11 +297,11 @@ class ImageStepActivity : Activity() {
     private fun test() {
         val svc = RecorderService.instance
         if (svc == null) {
-            Toast.makeText(this, "Turn on the accessibility service first", Toast.LENGTH_SHORT).show()
+            LToast.makeText(this, "Turn on the accessibility service first", Toast.LENGTH_SHORT).show()
             return
         }
         val tmp = buildStep(apply = false) ?: return
-        Toast.makeText(this, "Open the game. Checking the screen in 3 seconds…", Toast.LENGTH_LONG).show()
+        LToast.makeText(this, "Open the game. Checking the screen in 3 seconds…", Toast.LENGTH_LONG).show()
         moveTaskToBack(true)
         handler.postDelayed({
             svc.captureFrame { frame ->
@@ -324,7 +324,7 @@ class ImageStepActivity : Activity() {
     private fun showTestResult(tmp: ImageStep, captured: Boolean, m: ImageMatcher.Match?, d: ImageMatcher.Diag) {
         val need = (tmp.threshold * 100).toInt()
         val best = (d.best * 100).toInt().coerceAtLeast(0)
-        val b = AlertDialog.Builder(this, Ui.dialogTheme(p))
+        val b = TBuilder(this, Ui.dialogTheme(p))
         when {
             !captured -> b.setTitle("Couldn't capture the screen")
                 .setMessage("Connect Shizuku, or use Android 11 or later.")
