@@ -11,8 +11,8 @@ android {
         applicationId = "com.nnazuna.nnaclicker"
         minSdk = 24
         targetSdk = 34
-        versionCode = 14
-        versionName = "2.1.0-beta.1"
+        versionCode = 15
+        versionName = "2.1.0"
     }
 
     // Kunci tanda tangan tetap, supaya APK versi baru bisa langsung menimpa versi lama.
