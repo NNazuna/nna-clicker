@@ -160,7 +160,7 @@ Playback flow (delays between steps, labels and **Go to** loops, image-step bran
 
 Every push runs the tests and builds the APK with GitHub Actions; a failing test blocks the release. When `versionName` in `app/build.gradle.kts` changes, a new release is published with notes taken from [`CHANGELOG.md`](CHANGELOG.md).
 
-Builds are signed with the fixed key in `app/signing/` so new versions install over previous ones. Only install APKs published on this repository's Releases page.
+Releases are signed with a private key stored in the repository's GitHub Actions secrets, so new versions install over previous ones. Local builds use the default debug key. Only install APKs published on this repository's Releases page.
 
 ## License
 
