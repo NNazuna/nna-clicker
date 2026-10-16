@@ -11,27 +11,31 @@ android {
         applicationId = "com.nnazuna.nnaclicker"
         minSdk = 24
         targetSdk = 34
-        versionCode = 16
-        versionName = "2.2.0"
+        versionCode = 17
+        versionName = "2.2.1"
     }
 
-    // Kunci tanda tangan tetap, supaya APK versi baru bisa langsung menimpa versi lama.
+    // Release key comes from the environment (GitHub Actions secrets), never from the repo.
+    // Without it (local builds, forks) the default debug key is used.
+    val signingStore = System.getenv("SIGNING_STORE_FILE")
     signingConfigs {
-        create("stable") {
-            storeFile = file("signing/oprecorder.keystore")
-            storePassword = "u3NCvmRw3AURfb4QBCFb"
-            keyAlias = "oprecorder"
-            keyPassword = "u3NCvmRw3AURfb4QBCFb"
+        if (signingStore != null) {
+            create("stable") {
+                storeFile = file(signingStore)
+                storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+                keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+                keyPassword = System.getenv("SIGNING_STORE_PASSWORD")
+            }
         }
     }
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("stable")
+            if (signingStore != null) signingConfig = signingConfigs.getByName("stable")
         }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("stable")
+            if (signingStore != null) signingConfig = signingConfigs.getByName("stable")
         }
     }
 
@@ -52,4 +56,6 @@ dependencies {
     val shizuku = "13.1.5"
     implementation("dev.rikka.shizuku:api:$shizuku")
     implementation("dev.rikka.shizuku:provider:$shizuku")
+
+    testImplementation("junit:junit:4.13.2")
 }
