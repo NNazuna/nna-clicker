@@ -13,6 +13,13 @@
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
+<p align="center">
+  <a href="../../actions/workflows/build.yml"><img src="../../actions/workflows/build.yml/badge.svg" alt="Build"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/Android-7.0%2B-3ddc84" alt="Android 7.0+">
+  <img src="https://img.shields.io/badge/root-not%20required-informational" alt="No root required">
+</p>
+
 ---
 
 ## Overview
@@ -145,12 +152,19 @@ NNA Clicker has no network access. Touch input is only read while a recording is
 The project uses Gradle 8.7 with Android Gradle Plugin 8.5 and Kotlin 1.9.
 
 ```bash
-gradle assembleDebug
+gradle testDebugUnitTest   # run unit tests
+gradle assembleDebug       # build the APK
 ```
 
-Every push to `main` builds the APK with GitHub Actions. When `versionName` in `app/build.gradle.kts` changes, a new release is published with notes taken from [`CHANGELOG.md`](CHANGELOG.md).
+Playback flow (delays between steps, labels and **Go to** loops, image-step branching) lives in `Program`, which both input engines share. It is covered by unit tests in [`app/src/test`](app/src/test) that run on the JVM, no device needed.
+
+Every push runs the tests and builds the APK with GitHub Actions; a failing test blocks the release. When `versionName` in `app/build.gradle.kts` changes, a new release is published with notes taken from [`CHANGELOG.md`](CHANGELOG.md).
 
 Builds are signed with the fixed key in `app/signing/` so new versions install over previous ones. Only install APKs published on this repository's Releases page.
+
+## License
+
+[MIT](LICENSE)
 
 ## Disclaimer
 
