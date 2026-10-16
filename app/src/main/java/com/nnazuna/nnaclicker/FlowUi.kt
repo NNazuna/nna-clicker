@@ -17,11 +17,11 @@ object FlowUi {
     fun parseSec(v: String): Long? = v.trim().replace(',', '.').toDoubleOrNull()?.let { (it * 1000).toLong() }
 
     /** A name for a new label that isn't used yet: "Label 1", "Label 2", … */
-    fun newLabelName(rec: Recording): String {
+    fun newLabelName(rec: Recording, prefix: String = "Label"): String {
         val used = rec.flows.filter { it.kind == FlowStep.LABEL }.map { it.name }.toSet()
         var n = 1
-        while ("Label $n" in used) n++
-        return "Label $n"
+        while ("$prefix $n" in used) n++
+        return "$prefix $n"
     }
 
     /** Pick a label of [rec]; shows how to add one when there are none. */

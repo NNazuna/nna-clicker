@@ -269,7 +269,7 @@ class Kit(private val a: Activity) {
     }
 }
 
-enum class Icon { RECORD, STOP, PLAY, LIST, CLOSE, GRIP, MORE, BACK, CAMERA, IMAGE, TRASH, FLAG, JUMP, CLOCK }
+enum class Icon { RECORD, STOP, PLAY, LIST, CLOSE, GRIP, MORE, BACK, CAMERA, IMAGE, TRASH, FLAG, JUMP, CLOCK, TAP, SWIPE }
 
 /** Ikon digambar langsung di canvas supaya tajam & konsisten di semua ROM (tanpa emoji). */
 class IconDrawable(private val kind: Icon, color: Int, private val size: Int) : Drawable() {
@@ -370,6 +370,16 @@ class IconDrawable(private val kind: Icon, color: Int, private val size: Int) : 
                 c.drawPath(path, stroke)
                 c.drawLine(cx - s * 0.18f, cy - s * 0.26f, cx - s * 0.30f, cy - s * 0.12f, stroke)
                 c.drawLine(cx - s * 0.18f, cy - s * 0.26f, cx - s * 0.06f, cy - s * 0.12f, stroke)
+            }
+            Icon.TAP -> {
+                c.drawCircle(cx, cy, s * 0.10f, fill)
+                c.drawCircle(cx, cy, s * 0.26f, stroke)
+            }
+            Icon.SWIPE -> {
+                c.drawCircle(cx - s * 0.22f, cy, s * 0.08f, fill)
+                c.drawLine(cx - s * 0.12f, cy, cx + s * 0.28f, cy, stroke)
+                c.drawLine(cx + s * 0.28f, cy, cx + s * 0.16f, cy - s * 0.12f, stroke)
+                c.drawLine(cx + s * 0.28f, cy, cx + s * 0.16f, cy + s * 0.12f, stroke)
             }
             Icon.CLOCK -> {
                 c.drawCircle(cx, cy, s * 0.28f, stroke)

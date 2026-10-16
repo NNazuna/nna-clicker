@@ -82,6 +82,8 @@ Screenshots taken outside a recording can be added with **Add image step** in th
 
 ## Flow steps
 
+The easiest way to loop: open **⋮** on a step, choose **Repeat steps…**, and enter the first step, the last step, and how many times to run them. A colored bar in the editor marks the steps that repeat.
+
 Add these with **Add step** in the editor:
 
 | Step | What it does |
@@ -93,13 +95,13 @@ Add these with **Add step** in the editor:
 | **Back / Home / Recent apps** | Presses a system button |
 | **Open app** | Opens an app, or brings it to the front |
 
-Image steps can branch too: under **If found** and **If not found**, choose the next step, a label, or (when not found) stop. Set **Give up after** to 0 to check the screen once without waiting.
+Image steps can branch too: under **If found** and **If not found**, choose the next step, a label, or (when not found) stop. Set **Wait up to** to 0 to check the screen once without waiting.
 
 Example: repeat a battle until a reward screen shows up.
 
 1. **Label** "Battle"
 2. Taps to start the battle
-3. Image step: **Wait for** the reward screen, give up after 60 s, **If not found → Battle**
+3. Image step: **Wait for** the reward screen, wait up to 60 s, **If not found → Battle**
 4. Taps to collect the reward
 
 Image steps use Shizuku's screen capture when it is connected. Without Shizuku they need Android 11 or later and run at about three checks per second.

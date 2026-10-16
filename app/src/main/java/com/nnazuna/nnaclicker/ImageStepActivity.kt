@@ -151,8 +151,8 @@ class ImageStepActivity : Activity() {
         g.addView(k.divider())
         searchBox = segRow(g, "Search")
         g.addView(k.divider())
-        k.valueRow("Give up after", "0 = check once, without waiting") {
-            Ui.numberDialog(this, p, "Give up after (seconds)", (step.timeoutMs / 1000).toString(), false,
+        k.valueRow("Wait up to", "How long to look. 0 = check once") {
+            Ui.numberDialog(this, p, "Wait up to (seconds)", (step.timeoutMs / 1000).toString(), false,
                 "0 checks the screen once. Use it with \"If found\" and \"If not found\" to choose what runs next.") { v ->
                 v.toLongOrNull()?.let { step.timeoutMs = (it.coerceIn(0, 3600)) * 1000; refresh() }
             }

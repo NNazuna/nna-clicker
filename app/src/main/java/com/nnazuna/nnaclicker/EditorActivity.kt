@@ -70,8 +70,15 @@ class EditorActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             setPadding(k.dp(38f), 0, 0, k.dp(8f))
         }
-        actions.addView(k.textButton("Set all delays", p.play) { setAllGaps() })
-        actions.addView(k.textButton("Add step", p.play) { addStep(-1) })
+        actions.addView(k.textButton("Play", p.play) { playFromStart() }.apply {
+            setPadding(k.dp(12f), k.dp(10f), k.dp(12f), k.dp(10f))
+        })
+        actions.addView(k.textButton("Set all delays", p.play) { setAllGaps() }.apply {
+            setPadding(k.dp(12f), k.dp(10f), k.dp(12f), k.dp(10f))
+        })
+        actions.addView(k.textButton("Help", p.play) { showHelp() }.apply {
+            setPadding(k.dp(12f), k.dp(10f), k.dp(12f), k.dp(10f))
+        })
         root.addView(actions)
 
         listBox = LinearLayout(this).apply {
@@ -79,6 +86,10 @@ class EditorActivity : Activity() {
             setPadding(k.dp(4f), 0, 0, 0)
         }
         root.addView(listBox)
+
+        root.addView(k.pillButton("+  Add step", p.play) { addStep(-1) }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = k.dp(18f); leftMargin = k.dp(4f) })
 
         setContentView(ScrollView(this).apply {
             setBackgroundColor(p.bg)
@@ -167,14 +178,37 @@ class EditorActivity : Activity() {
         summary.text = "${steps.size} steps" + (if (extra.isNotEmpty()) " (${extra.joinToString(", ")})" else "") +
             "  ·  ${Ui.fmtSec(rec.length)}"
         listBox.removeAllViews()
+        val loops = loopRanges()
         steps.forEachIndexed { i, s ->
-            if (i > 0) listBox.addView(gapView(i))
-            listBox.addView(when (s) {
+            if (i > 0) listBox.addView(withStrips(gapView(i), loops.count { i > it.first && i <= it.last }))
+            listBox.addView(withStrips(when (s) {
                 is ImageStep -> imageView(i, s)
                 is FlowStep -> flowView(i, s)
                 else -> gestureView(i, s as RecGesture)
-            })
+            }, loops.count { i in it }, top = i > 0))
         }
+    }
+
+    /** Steps from a label to a Go to that jumps back to it: the part that repeats. */
+    private fun loopRanges(): List<IntRange> = steps.withIndex().mapNotNull { (i, s) ->
+        if (s !is FlowStep || s.kind != FlowStep.GOTO) return@mapNotNull null
+        val t = labelIndex(s.ref)
+        if (t in 0 until i) t..i else null
+    }
+
+    private fun labelIndex(ref: String?): Int =
+        steps.indexOfFirst { it is FlowStep && it.kind == FlowStep.LABEL && it.ref == ref }
+
+    /** Draw [depth] colored bars on the left, so the steps that repeat are easy to see. */
+    private fun withStrips(v: View, depth: Int, top: Boolean = true): View {
+        if (depth <= 0) return v
+        val box = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        repeat(depth) {
+            box.addView(View(this).apply { background = k.rounded(p.play, 2f) },
+                LinearLayout.LayoutParams(k.dp(4f), ViewGroup.LayoutParams.MATCH_PARENT).apply { rightMargin = k.dp(5f) })
+        }
+        box.addView(v, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        return box
     }
 
     /** Penghubung antar langkah: garis vertikal + jeda yang bisa diketuk. */
@@ -189,9 +223,9 @@ class EditorActivity : Activity() {
         row.addView(View(this).apply { setBackgroundColor(p.line) },
             LinearLayout.LayoutParams(k.dp(2f), k.dp(40f)).apply { leftMargin = k.dp(17f); rightMargin = k.dp(20f) })
         val gap = gapBefore(i)
-        row.addView(k.text(if (gap <= 1) "no wait" else "wait $gap ms", 13.5f, 1, p.play).apply {
+        row.addView(k.text(if (gap <= 1) "no wait" else "wait ${FlowUi.sec(gap)}", 13f, 1, p.muted).apply {
             fontFeatureSettings = "tnum"
-            setPadding(k.dp(10f), k.dp(4f), k.dp(10f), k.dp(4f))
+            setPadding(k.dp(10f), k.dp(3f), k.dp(10f), k.dp(3f))
             background = k.rounded(p.surface, 12f)
         })
         return row
@@ -217,14 +251,16 @@ class EditorActivity : Activity() {
             background = k.rounded(p.surface, 14f)
             setPadding(0, k.dp(10f), k.dp(4f), k.dp(10f))
         }
-        row.addView(number(i), LinearLayout.LayoutParams(k.dp(28f), k.dp(28f)).apply { leftMargin = k.dp(4f); rightMargin = k.dp(14f) })
+        row.addView(number(i), LinearLayout.LayoutParams(k.dp(28f), k.dp(28f)).apply { leftMargin = k.dp(4f); rightMargin = k.dp(12f) })
+        row.addView(k.icon(if (g.kind == "Swipe") Icon.SWIPE else Icon.TAP, p.ink, 22f),
+            LinearLayout.LayoutParams(k.dp(28f), k.dp(28f)).apply { rightMargin = k.dp(12f) })
 
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         col.addView(k.text(g.kind, 16f, 2))
         val where = if (g.kind == "Swipe") {
             "${pts.first().x.toInt()}, ${pts.first().y.toInt()}  →  ${pts.last().x.toInt()}, ${pts.last().y.toInt()}"
         } else "${pts.first().x.toInt()}, ${pts.first().y.toInt()}"
-        col.addView(k.text("$where  ·  ${g.duration} ms", 13f, 0, p.muted).apply {
+        col.addView(k.text("at $where  ·  ${g.duration} ms", 13f, 0, p.muted).apply {
             setPadding(0, k.dp(3f), 0, 0)
             fontFeatureSettings = "tnum"
         })
@@ -258,9 +294,8 @@ class EditorActivity : Activity() {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         col.addView(k.text(s.title, 16f, 2))
         val sub = if (!s.ready) "Tap to choose the area" else
-            "${if (s.anywhere) "anywhere" else "near its spot"}  ·  " +
-                (if (s.timeoutMs <= 0) "check once" else "up to ${s.timeoutMs / 1000} s") +
-                "  ·  ${(s.threshold * 100).toInt()}%"
+            (if (s.timeoutMs <= 0) "Checks once" else "Waits up to ${s.timeoutMs / 1000} s") +
+                "  ·  ${if (s.anywhere) "anywhere" else "near its spot"}  ·  ${(s.threshold * 100).toInt()}% match"
         col.addView(k.text(sub, 13f, if (s.ready) 0 else 1, if (s.ready) p.muted else p.warn).apply {
             setPadding(0, k.dp(3f), 0, 0)
         })
@@ -316,11 +351,21 @@ class EditorActivity : Activity() {
         }
         col.addView(k.text(title, 16f, 2, if (isLabel) p.play else p.ink))
         val sub = when (s.kind) {
-            FlowStep.LABEL -> "Label  ·  jumps land here"
+            FlowStep.LABEL -> {
+                val users = steps.withIndex().filter { (_, x) ->
+                    (x is FlowStep && x.kind == FlowStep.GOTO && x.ref == s.ref) ||
+                        (x is ImageStep && (x.foundGoto == s.ref || (x.onTimeout == ImageStep.ON_TIMEOUT_GOTO && x.failGoto == s.ref)))
+                }.map { it.index + 1 }
+                if (users.isEmpty()) "Label · nothing jumps here yet" else "Label · step ${users.joinToString(", ")} jump here"
+            }
             FlowStep.GOTO -> if (missing) "Tap to pick a label" else {
-                val target = steps.indexOfFirst { it is FlowStep && it.kind == FlowStep.LABEL && it.ref == s.ref }
-                val dir = if (target <= i) "back to step ${target + 1}" else "ahead to step ${target + 1}"
-                "$dir  ·  " + if (s.count == 0) "every time" else "${s.count}× then continue"
+                val t = labelIndex(s.ref)
+                if (t < i) {
+                    val part = if (t + 2 <= i) "steps ${t + 2}–$i" else "from step ${t + 1}"
+                    if (s.count == 0) "Repeats $part until stopped" else "Repeats $part · ${s.count + 1}× in total"
+                } else {
+                    "Skips ahead to step ${t + 1}" + if (s.count == 0) "" else " · first ${s.count}×"
+                }
             }
             FlowStep.WAIT -> if (s.maxMs > s.minMs) "random ${FlowUi.sec(s.minMs)} – ${FlowUi.sec(s.maxMs)}" else FlowUi.sec(s.minMs)
             FlowStep.KEY -> "System button"
@@ -391,6 +436,7 @@ class EditorActivity : Activity() {
             }
             menu.add(0, 9, 7, "Add step after")
             menu.add(0, 11, 8, "Play from here")
+            menu.add(0, 12, 0, "Repeat steps…")
             if (i > 0) menu.add(0, 5, 1, "Move up")
             if (i < steps.size - 1) menu.add(0, 6, 2, "Move down")
             if (steps.size > 2) menu.add(0, 7, 3, "Move to…")
@@ -406,6 +452,7 @@ class EditorActivity : Activity() {
                     8 -> editGesture(steps[i] as RecGesture)
                     10 -> editFlow(steps[i] as FlowStep)
                     11 -> playFrom(i)
+                    12 -> repeatSteps(i)
                     9 -> addStep(i)
                     5 -> move(i, i - 1)
                     6 -> move(i, i + 1)
@@ -494,13 +541,8 @@ class EditorActivity : Activity() {
         val anchor = steps.getOrNull(after)
         val afterEnd = anchor?.let { it.at + it.duration } ?: -1L
         val afterStart = anchor?.at ?: -1L
-        AlertDialog.Builder(this, Ui.dialogTheme(p))
-            .setTitle(if (anchor == null) "Add step" else "Add step after ${after + 1}")
-            .setItems(arrayOf(
-                "Tap", "Swipe", "Image (from a screenshot)", "Wait", "Label", "Go to label",
-                "Back / Home / Recent apps", "Open app", "Stop playback",
-            )) { _, which ->
-                val index = if (after < 0) steps.size else after + 1
+        val index = if (after < 0) steps.size else after + 1
+        stepSheet(if (anchor == null) "Add step" else "Add step after ${after + 1}") { which ->
                 when (which) {
                     0, 1 -> startActivity(
                         Intent(this, PointActivity::class.java)
@@ -529,8 +571,122 @@ class EditorActivity : Activity() {
                         insertAt(index, FlowStep(0, FlowStep.LAUNCH, ref = pkg, name = name), 0)
                     }
                     8 -> insertAt(index, FlowStep(0, FlowStep.STOP), 0)
+                    9 -> repeatSteps(if (after < 0) maxOf(steps.size - 1, 0) else after)
                 }
+        }
+    }
+
+    /** Choices for "Add step", grouped and explained, with the ids used by [addStep]. */
+    private fun stepSheet(title: String, onPick: (Int) -> Unit) {
+        val groups = listOf(
+            "Touch" to listOf(
+                Triple(0, "Tap", "Tap one spot"),
+                Triple(1, "Swipe", "Drag from one point to another"),
+            ),
+            "Image" to listOf(
+                Triple(2, "Image", "Wait for, or tap, something on the screen"),
+            ),
+            "Repeat and logic" to listOfNotNull(
+                Triple(9, "Repeat steps", "Run some steps several times").takeIf { steps.isNotEmpty() },
+                Triple(3, "Wait", "Pause for a fixed or random time"),
+                Triple(4, "Label", "A place other steps can jump to"),
+                Triple(5, "Go to label", "Jump to a label"),
+                Triple(8, "Stop playback", "End playback here"),
+            ),
+            "System" to listOf(
+                Triple(6, "Back / Home / Recent apps", "Press a system button"),
+                Triple(7, "Open app", "Open or switch to an app"),
+            ),
+        )
+        val icons = mapOf(0 to Icon.TAP, 1 to Icon.SWIPE, 2 to Icon.IMAGE, 9 to Icon.JUMP, 3 to Icon.CLOCK,
+            4 to Icon.FLAG, 5 to Icon.JUMP, 8 to Icon.STOP, 6 to Icon.BACK, 7 to Icon.PLAY)
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(k.dp(8f), k.dp(4f), k.dp(8f), k.dp(8f))
+        }
+        var dialog: AlertDialog? = null
+        for ((header, items) in groups) {
+            box.addView(k.text(header.uppercase(), 12f, 2, p.muted).apply {
+                letterSpacing = 0.06f
+                setPadding(k.dp(12f), k.dp(14f), k.dp(12f), k.dp(4f))
+            })
+            for ((id, name, help) in items) {
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    minimumHeight = k.dp(56f)
+                    setPadding(k.dp(12f), k.dp(8f), k.dp(12f), k.dp(8f))
+                    background = k.ripple(null, k.dp(12f).toFloat())
+                    setOnClickListener { dialog?.dismiss(); onPick(id) }
+                }
+                row.addView(k.icon(icons[id] ?: Icon.PLAY, if (id == 8) p.rec else p.play, 22f),
+                    LinearLayout.LayoutParams(k.dp(36f), k.dp(36f)).apply { rightMargin = k.dp(12f) })
+                val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+                col.addView(k.text(name, 16f, 1))
+                col.addView(k.text(help, 13f, 0, p.muted).apply { setPadding(0, k.dp(2f), 0, 0) })
+                row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                box.addView(row)
             }
+        }
+        dialog = AlertDialog.Builder(this, Ui.dialogTheme(p))
+            .setTitle(title)
+            .setView(ScrollView(this).apply { addView(box) })
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /**
+     * Beginner-friendly loop: pick a range of steps and how many times it runs; this adds the
+     * label before the first step and the Go to after the last one.
+     */
+    private fun repeatSteps(at: Int) {
+        if (steps.isEmpty()) return
+        val first = at.coerceIn(0, steps.size - 1) + 1
+        FlowUi.numbersDialog(
+            this, p, "Repeat steps",
+            "The steps from the first to the last number run this many times. 0 = until you stop playback.",
+            listOf("From step" to "$first", "To step" to "$first", "Times" to "3"), false,
+        ) { v ->
+            val a = v[0].toIntOrNull() ?: return@numbersDialog
+            val b = v[1].toIntOrNull() ?: a
+            val times = v[2].toIntOrNull() ?: return@numbersDialog
+            val from = (minOf(a, b) - 1).coerceIn(0, steps.size - 1)
+            val to = (maxOf(a, b) - 1).coerceIn(0, steps.size - 1)
+            if (times == 1) return@numbersDialog
+            val label = FlowStep(0, FlowStep.LABEL, ref = FlowStep.newId(), name = FlowUi.newLabelName(rec, "Repeat"))
+            val jump = FlowStep(0, FlowStep.GOTO, ref = label.ref, count = if (times <= 0) 0 else times - 1)
+            // Add the jump first so the step numbers for the label stay the same.
+            insertAt(to + 1, jump, 0)
+            insertAt(from, label, 0)
+            android.widget.Toast.makeText(this,
+                if (times <= 0) "Steps ${from + 1}–${to + 1} repeat until stopped" else "Steps ${from + 1}–${to + 1} run $times times",
+                android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun playFromStart() {
+        val svc = RecorderService.instance
+        if (svc == null) {
+            android.widget.Toast.makeText(this, "Turn on the accessibility service first", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        android.widget.Toast.makeText(this, "Open the game. Playing in 3 seconds…", android.widget.Toast.LENGTH_LONG).show()
+        svc.playFrom(rec.id, -1)
+        moveTaskToBack(true)
+    }
+
+    private fun showHelp() {
+        AlertDialog.Builder(this, Ui.dialogTheme(p))
+            .setTitle("How steps work")
+            .setMessage(
+                "Steps run from top to bottom. Tap a \"wait\" between steps to change the delay.\n\n" +
+                    "Repeat steps: open ⋮ on a step and choose Repeat steps… to run a part several times.\n\n" +
+                    "Label + Go to: a Label marks a place, and Go to jumps to it. Jumping back repeats the steps in between; " +
+                    "the colored bar on the left shows which steps repeat.\n\n" +
+                    "Image steps can choose what runs next: under If found and If not found, pick the next step, a label, or stop.\n\n" +
+                    "Volume Down stops playback at any time."
+            )
+            .setPositiveButton("OK", null)
             .show()
     }
 

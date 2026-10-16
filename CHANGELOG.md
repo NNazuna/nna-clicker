@@ -3,6 +3,20 @@
 All notable changes to NNA Clicker are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Repeat steps…**: choose the first and last step and how many times to run them; the label and Go to are added for you.
+- Colored bars in the editor show which steps repeat.
+- **Play** and **Help** in the editor, and a large **Add step** button at the end of the list.
+- **Duplicate** for recordings, and an **Edit** button on each recording.
+
+### Changed
+- **Add step** shows grouped choices (Touch, Image, Repeat and logic, System) with a short description of each.
+- Go to and Label steps describe what they do in plain words, such as "Repeats steps 3–5 · 3× in total".
+- Clearer step details and a short guide when there are no recordings yet.
+- "Give up after" on image steps is now "Wait up to".
+
 ## [2.0.0] - 2026-10-15
 
 ### Added

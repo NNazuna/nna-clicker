@@ -403,10 +403,14 @@ class MainActivity : Activity() {
         listGroup.removeAllViews()
         val recs = storage.list()
         if (recs.isEmpty()) {
+            listGroup.addView(k.text("No recordings yet", 16f, 1).apply {
+                setPadding(k.dp(16f), k.dp(18f), k.dp(16f), 0)
+            })
             listGroup.addView(k.text(
-                "No recordings yet",
-                14.5f, 0, p.muted,
-            ).apply { setPadding(k.dp(16f), k.dp(18f), k.dp(16f), k.dp(18f)) })
+                "Tap Show panel, open a game, and press the red button to record what you do. " +
+                    "Or use Auto clicker to repeat a tap without recording.",
+                14f, 0, p.muted,
+            ).apply { setPadding(k.dp(16f), k.dp(6f), k.dp(16f), k.dp(18f)) })
             return
         }
         val selected = storage.selected()?.id
@@ -430,12 +434,16 @@ class MainActivity : Activity() {
                 setPadding(0, k.dp(11f), 0, k.dp(11f))
             }
             col.addView(k.text(r.name, 16f, if (isSel) 2 else 1))
-                        col.addView(k.text(
-                "${r.gestures.size} actions" + (if (r.images.isNotEmpty()) ", ${r.images.size} image" else "") +
-                    (if (r.flows.isNotEmpty()) ", ${r.flows.size} flow" else "") + "  ·  ${Ui.fmtSec(r.length)}  ·  ${fmt.format(Date(r.created))}",
+            val loops = r.flows.any { it.kind == FlowStep.GOTO }
+            col.addView(k.text(
+                "${r.steps().size} steps" + (if (r.images.isNotEmpty()) " · ${r.images.size} image" else "") +
+                    (if (loops) " · repeats" else "") + "  ·  ${Ui.fmtSec(r.length)}  ·  ${fmt.format(Date(r.created))}",
                 13f, 0, p.muted,
             ).apply { setPadding(0, k.dp(3f), 0, 0); fontFeatureSettings = "tnum" })
             row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            row.addView(k.textButton("Edit", p.play) { openEditor(r) }.apply {
+                setPadding(k.dp(12f), k.dp(12f), k.dp(4f), k.dp(12f))
+            })
             row.addView(k.icon(Icon.MORE, p.muted, 22f).apply {
                 minimumWidth = k.dp(48f); minimumHeight = k.dp(48f)
                 background = k.ripple(null, k.dp(24f).toFloat())
@@ -451,12 +459,14 @@ class MainActivity : Activity() {
             menu.add(0, 1, 0, "Select")
             menu.add(0, 2, 1, "Edit")
             menu.add(0, 3, 2, "Rename")
+            menu.add(0, 6, 3, "Duplicate")
             menu.add(0, 4, 3, "Export")
             menu.add(0, 5, 4, "Delete")
             setOnMenuItemClickListener {
                 when (it.itemId) {
                     1 -> { storage.selectedId = r.id; renderList() }
-                    2 -> startActivity(Intent(this@MainActivity, EditorActivity::class.java).putExtra(EditorActivity.EXTRA_ID, r.id))
+                    2 -> openEditor(r)
+                    6 -> duplicate(r)
                     3 -> rename(r)
                     4 -> export(r)
                     5 -> confirmDelete(r)
@@ -465,6 +475,19 @@ class MainActivity : Activity() {
             }
             show()
         }
+    }
+
+    private fun openEditor(r: Recording) =
+        startActivity(Intent(this, EditorActivity::class.java).putExtra(EditorActivity.EXTRA_ID, r.id))
+
+    /** Save a copy, to try changes without touching the original. */
+    private fun duplicate(r: Recording) {
+        val c = Recording.fromJson(r.toJson())
+        val copy = Recording(UUID.randomUUID().toString(), "${r.name} (copy)", System.currentTimeMillis(), c.gestures, c.images, c.flows)
+        storage.save(copy)
+        storage.selectedId = copy.id
+        renderList()
+        toast("Copied: ${copy.name}")
     }
 
     private fun rename(r: Recording) {
