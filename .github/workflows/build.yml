@@ -10,6 +10,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      HAS_SIGNING_KEY: ${{ secrets.SIGNING_KEYSTORE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -25,7 +27,25 @@ jobs:
       - name: Run unit tests
         run: gradle testDebugUnitTest --no-daemon --stacktrace
 
+      # Releases must be signed with the private key, so that updates install over earlier versions.
+      - name: Require signing key on main
+        if: github.ref == 'refs/heads/main' && env.HAS_SIGNING_KEY != 'true'
+        run: |
+          echo "::error::Add the SIGNING_KEYSTORE_BASE64, SIGNING_STORE_PASSWORD and SIGNING_KEY_ALIAS repository secrets."
+          exit 1
+
+      - name: Decode signing key
+        if: env.HAS_SIGNING_KEY == 'true'
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+        run: |
+          echo "$SIGNING_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.p12"
+          echo "SIGNING_STORE_FILE=$RUNNER_TEMP/release.p12" >> "$GITHUB_ENV"
+
       - name: Build APK
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
         run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Prepare release
