@@ -1,0 +1,5 @@
+# Copy this file to local.properties and fill in your signing credentials
+# Do NOT commit local.properties to version control!
+
+KEYSTORE_PASSWORD=your_keystore_password_here
+KEY_PASSWORD=your_key_password_here

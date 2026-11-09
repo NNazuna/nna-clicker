@@ -19,9 +19,9 @@ android {
     signingConfigs {
         create("stable") {
             storeFile = file("signing/oprecorder.keystore")
-            storePassword = "u3NCvmRw3AURfb4QBCFb"
+            storePassword = project.findProperty("KEYSTORE_PASSWORD") as String? ?: System.getenv("KEYSTORE_PASSWORD") ?: ""
             keyAlias = "oprecorder"
-            keyPassword = "u3NCvmRw3AURfb4QBCFb"
+            keyPassword = project.findProperty("KEY_PASSWORD") as String? ?: System.getenv("KEY_PASSWORD") ?: ""
         }
     }
 
