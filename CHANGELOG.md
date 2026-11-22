@@ -5,7 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- A small **Running** pill at the top of the screen while quick or multi-target auto tap runs, with its own Stop button. Drag it aside if it covers something.
+- Unit tests for the auto tap loops (timing, per-target delay, clamping), saved setup JSON, and setup naming.
+
 ### Changed
+- Release APKs are now signed release builds instead of debug builds. Publishing refuses to run without the signing secrets, and the release cleanup no longer deletes tags that aren't `vX.Y.Z`.
+- The floating overlays (quick tap, multi-target picker, saved setups, running pill) moved out of the accessibility service into their own files, with shared overlay colors.
 - Saved setups list redesigned: each setup shows its tap count, timing, and quick Open, Rename, and Delete buttons. Long lists scroll, and a **New setup** button starts a fresh one.
 
 ### Fixed
