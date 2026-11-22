@@ -157,7 +157,7 @@ Builds are signed with the fixed key in `app/signing/` so new versions install o
 If NNA Clicker saves you time, you can support its development:
 
 - [Ko-fi](https://ko-fi.com/nnazuna)
-- [Saweria](https://saweria.co/SenaCuna)
+- [Saweria](https://saweria.co/nnazuna)
 
 Bug reports, feature requests, and pull requests are always welcome.
 
