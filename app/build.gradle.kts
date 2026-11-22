@@ -11,23 +11,34 @@ android {
         applicationId = "com.nnazuna.nnaclicker"
         minSdk = 24
         targetSdk = 34
-        versionCode = 16
-        versionName = "2.2.0"
+        versionCode = 17
+        versionName = "2.2.1"
     }
 
     // Kunci tanda tangan tetap, supaya APK versi baru bisa langsung menimpa versi lama.
+    val stableStorePassword =
+        project.findProperty("KEYSTORE_PASSWORD") as String? ?: System.getenv("KEYSTORE_PASSWORD") ?: ""
+    val stableKeyPassword =
+        project.findProperty("KEY_PASSWORD") as String? ?: System.getenv("KEY_PASSWORD") ?: ""
+    val hasStableSigning = stableStorePassword.isNotBlank() && stableKeyPassword.isNotBlank()
+
     signingConfigs {
         create("stable") {
             storeFile = file("signing/oprecorder.keystore")
-            storePassword = project.findProperty("KEYSTORE_PASSWORD") as String? ?: System.getenv("KEYSTORE_PASSWORD") ?: ""
+            storePassword = stableStorePassword
             keyAlias = "oprecorder"
-            keyPassword = project.findProperty("KEY_PASSWORD") as String? ?: System.getenv("KEY_PASSWORD") ?: ""
+            keyPassword = stableKeyPassword
         }
     }
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("stable")
+            // Local contributors can build without the private signing password.
+            signingConfig = if (hasStableSigning) {
+                signingConfigs.getByName("stable")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
         release {
             isMinifyEnabled = false
@@ -46,10 +57,14 @@ android {
         aidl = true
         buildConfig = true
     }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
     val shizuku = "13.1.5"
     implementation("dev.rikka.shizuku:api:$shizuku")
     implementation("dev.rikka.shizuku:provider:$shizuku")
+    testImplementation("junit:junit:4.13.2")
 }

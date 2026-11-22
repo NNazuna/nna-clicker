@@ -138,13 +138,14 @@ Image steps use Shizuku's screen capture when it is connected. Without Shizuku t
 
 ## Privacy
 
-NNA Clicker has no network access. Touch input is only read while a recording is in progress. The screen is captured only when you press the camera button, while a recording with image steps is playing, or once when playback stops with an error (for the run log). The images never leave the device.
+NNA Clicker has no network access, and Android cloud backup is disabled, so recordings and screenshots stay on the device. Use **Export** to move a recording. Touch input is only read while a recording is in progress. The screen is captured only when you press the camera button, while a recording with image steps is playing, or once when playback stops with an error (for the run log). The images never leave the device.
 
 ## Building from source
 
 The project uses Gradle 8.7 with Android Gradle Plugin 8.5 and Kotlin 1.9.
 
 ```bash
+gradle testDebugUnitTest
 gradle assembleDebug
 ```
 
