@@ -598,11 +598,7 @@ class RecorderService : AccessibilityService() {
 
         fun refreshMulti() {
             val n = multiTargets.size
-            countLabel.text = if (n == 0) {
-                L.t("Tap a spot to add a target")
-            } else {
-                L.t("{} targets · tap one to remove", n)
-            }
+            countLabel.text = if (n == 0) L.t("Tap a spot") else L.t("{} targets", n)
             startButton.isEnabled = n > 0
             startButton.alpha = if (n > 0) 1f else 0.35f
             multiTargets.forEachIndexed { i, t -> (t.view as TextView).text = (i + 1).toString() }
@@ -671,41 +667,63 @@ class RecorderService : AccessibilityService() {
             refreshMulti()
         }
 
-        val top = LinearLayout(this).apply {
+        val panelW = minOf(dp(340f), size.x - dp(24f))
+        val capsule = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14f), dp(12f), dp(10f), dp(12f))
+            setPadding(dp(6f), dp(6f), dp(6f), dp(6f))
             background = GradientDrawable().apply {
-                cornerRadius = dp(4f).toFloat()
+                cornerRadius = dp(6f).toFloat()
                 setColor(0xFF1C2220.toInt())
+                setStroke(dp(1f), 0x33FFFFFF)
             }
             isClickable = true
         }
-        val topRow = LinearLayout(this).apply {
+        val capLp = FrameLayout.LayoutParams(panelW, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
+            leftMargin = (size.x - panelW) / 2
+            topMargin = dp(28f)
+        }
+        val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        topRow.addView(TextView(this).apply {
-            text = L.t("Tap targets in order")
-            setTextColor(0xFFF1F4F2.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            typeface = Ui.font(this@RecorderService, 2)
-        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        topRow.addView(TextView(this).apply {
-            text = L.t("Cancel")
-            setTextColor(COLOR_PLAY)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            typeface = Ui.font(this@RecorderService, 2)
-            setPadding(dp(14f), dp(6f), dp(8f), dp(6f))
-            setOnClickListener { removeMultiPicker(restorePanel = true) }
-        })
-        top.addView(topRow)
-        countLabel = TextView(this).apply {
-            setTextColor(0x99FFFFFF.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
-            typeface = Ui.font(this@RecorderService, 0)
-            setPadding(0, dp(3f), 0, 0)
+        val handle = ImageView(this).apply {
+            setImageDrawable(IconDrawable(Icon.GRIP, 0x8CFFFFFF.toInt(), dp(20f)))
+            scaleType = ImageView.ScaleType.CENTER
         }
-        top.addView(countLabel)
+        row.addView(handle, LinearLayout.LayoutParams(dp(28f), dp(40f)))
+
+        countLabel = TextView(this).apply {
+            setTextColor(0xCCFFFFFF.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            typeface = Ui.font(this@RecorderService, 1)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(2f), 0, dp(4f), 0)
+        }
+        row.addView(countLabel, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+
+        fun iconButton(icon: Icon, description: String, onClick: () -> Unit): ImageView = ImageView(this).apply {
+            setImageDrawable(IconDrawable(icon, 0xFFF1F4F2.toInt(), dp(19f)))
+            scaleType = ImageView.ScaleType.CENTER
+            contentDescription = description
+            background = RippleDrawable(
+                android.content.res.ColorStateList.valueOf(0x33FFFFFF), null,
+                GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFFFFFFFF.toInt()) },
+            )
+            setOnClickListener { onClick() }
+        }
+        row.addView(iconButton(Icon.BACK, "Undo") {
+            if (multiTargets.isNotEmpty()) {
+                val t = multiTargets.removeAt(multiTargets.lastIndex)
+                frame.removeView(t.view)
+                refreshMulti()
+            }
+        }, LinearLayout.LayoutParams(dp(36f), dp(40f)))
+        row.addView(iconButton(Icon.TRASH, "Clear") {
+            multiTargets.forEach { frame.removeView(it.view) }
+            multiTargets.clear()
+            refreshMulti()
+        }, LinearLayout.LayoutParams(dp(36f), dp(40f)))
 
         everyLabel = TextView(this).apply {
             setTextColor(COLOR_PLAY)
@@ -737,79 +755,54 @@ class RecorderService : AccessibilityService() {
             setOnClickListener { onClick() }
         }
         fun timingRow(label: String, value: () -> TextView, stepDown: () -> Unit, stepUp: () -> Unit): LinearLayout {
-            val row = LinearLayout(this).apply {
+            val r = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, dp(2f), 0, 0)
             }
-            row.addView(TextView(this).apply {
+            r.addView(TextView(this).apply {
                 text = label
                 setTextColor(0x99FFFFFF.toInt())
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
                 typeface = Ui.font(this@RecorderService, 0)
             }, LinearLayout.LayoutParams(dp(42f), LinearLayout.LayoutParams.WRAP_CONTENT))
-            row.addView(stepButton("−", stepDown))
-            row.addView(value(), LinearLayout.LayoutParams(dp(76f), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            r.addView(stepButton("−", stepDown))
+            r.addView(value(), LinearLayout.LayoutParams(dp(76f), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 gravity = Gravity.CENTER
             })
-            row.addView(stepButton("+", stepUp))
-            return row
+            r.addView(stepButton("+", stepUp))
+            return r
         }
-
-        top.addView(timingRow("Every", { everyLabel }, {
+        val timingBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(0, dp(4f), 0, 0)
+        }
+        val everyRow = timingRow("Every", { everyLabel }, {
             everyMs = (everyMs - 100L).coerceAtLeast(100L); refreshTiming()
         }, {
             everyMs = (everyMs + 100L).coerceAtMost(3_600_000L); refreshTiming()
-        }))
-        top.addView(timingRow("Hold", { holdLabel }, {
+        })
+        val holdRow = timingRow("Hold", { holdLabel }, {
             holdMs = (holdMs - 20L).coerceAtLeast(20L); refreshTiming()
         }, {
             holdMs = (holdMs + 20L).coerceAtMost(2_000L); refreshTiming()
-        }))
-        refreshTiming()
+        })
+        timingBox.addView(everyRow)
+        timingBox.addView(holdRow)
+        row.addView(iconButton(Icon.SETTINGS, "Timing") {
+            timingBox.visibility = if (timingBox.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            refreshTiming()
+        }, LinearLayout.LayoutParams(dp(36f), dp(40f)))
 
-        val bottom = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8f), dp(8f), dp(8f), dp(8f))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(4f).toFloat()
-                setColor(0xFF1C2220.toInt())
-            }
-            isClickable = true
-        }
-        fun action(label: String, onClick: () -> Unit): TextView = TextView(this).apply {
-            text = L.t(label)
-            gravity = Gravity.CENTER
-            minHeight = dp(44f)
-            setTextColor(0xFFF1F4F2.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            typeface = Ui.font(this@RecorderService, 2)
-            background = RippleDrawable(
-                android.content.res.ColorStateList.valueOf(0x33FFFFFF), null,
-                GradientDrawable().apply { cornerRadius = dp(4f).toFloat(); setColor(0xFFFFFFFF.toInt()) },
-            )
-            setOnClickListener { onClick() }
-        }
-        bottom.addView(action("Undo") {
-            if (multiTargets.isNotEmpty()) {
-                val t = multiTargets.removeAt(multiTargets.lastIndex)
-                frame.removeView(t.view)
-                refreshMulti()
-            }
-        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        bottom.addView(action("Clear") {
-            multiTargets.forEach { frame.removeView(it.view) }
-            multiTargets.clear()
-            refreshMulti()
-        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         startButton = TextView(this).apply {
             text = L.t("Start")
             gravity = Gravity.CENTER
-            minHeight = dp(44f)
+            minHeight = dp(40f)
             setTextColor(0xFF0F1312.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             typeface = Ui.font(this@RecorderService, 2)
+            setPadding(dp(12f), 0, dp(12f), 0)
             background = GradientDrawable().apply {
                 cornerRadius = dp(4f).toFloat()
                 setColor(COLOR_PLAY)
@@ -824,26 +817,37 @@ class RecorderService : AccessibilityService() {
                 }
             }
         }
-        bottom.addView(startButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.6f).apply {
-            leftMargin = dp(4f)
+        row.addView(startButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(40f)).apply {
+            leftMargin = dp(2f)
         })
+        row.addView(iconButton(Icon.CLOSE, "Cancel") { removeMultiPicker(restorePanel = true) },
+            LinearLayout.LayoutParams(dp(36f), dp(40f)))
 
-        frame.addView(top, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-        ).apply {
-            gravity = Gravity.TOP
-            topMargin = dp(72f)
-            leftMargin = dp(16f)
-            rightMargin = dp(16f)
-        })
-        frame.addView(bottom, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-        ).apply {
-            gravity = Gravity.BOTTOM
-            bottomMargin = dp(28f)
-            leftMargin = dp(16f)
-            rightMargin = dp(16f)
-        })
+        var dragX = 0f
+        var dragY = 0f
+        var dragLeft = 0
+        var dragTop = 0
+        handle.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    dragX = e.rawX; dragY = e.rawY
+                    dragLeft = capLp.leftMargin; dragTop = capLp.topMargin
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    capLp.leftMargin = (dragLeft + (e.rawX - dragX)).toInt()
+                        .coerceIn(0, maxOf(0, size.x - panelW))
+                    val maxTop = maxOf(0, size.y - maxOf(capsule.height, dp(56f)))
+                    capLp.topMargin = (dragTop + (e.rawY - dragY)).toInt().coerceIn(0, maxTop)
+                    capsule.layoutParams = capLp
+                }
+            }
+            true
+        }
+
+        capsule.addView(row)
+        capsule.addView(timingBox)
+        frame.addView(capsule, capLp)
+        refreshTiming()
         frame.setOnTouchListener { _, e ->
             if (e.actionMasked == MotionEvent.ACTION_UP) addTarget(e.rawX, e.rawY)
             true
