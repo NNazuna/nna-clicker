@@ -498,7 +498,7 @@ class MainActivity : Activity() {
         suppressScope = false
         scopeTitle.text = L.t("Only for this recording")
         scopeSub.text = when {
-            sel == null -> L.t("Record something first")
+            sel == null -> L.t("Record something first. Settings below apply to all.")
             cfgRec != null -> L.t("Used only by “{}”", sel.name)
             else -> L.t("Off: these settings are used by all recordings")
         }
