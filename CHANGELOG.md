@@ -3,7 +3,7 @@
 All notable changes to NNA Clicker are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.2.1] - 2026-11-22
 
 ### Added
 - Unit tests for the playback program, timeline, evdev coordinate mapping, and model constraints.
