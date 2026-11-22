@@ -79,21 +79,26 @@ class MainActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(k.dp(16f), k.dp(28f), k.dp(16f), k.dp(56f))
+            setPadding(k.dp(16f), k.dp(12f), k.dp(16f), k.dp(56f))
         }
 
-        // ---- Judul ----
+        // ---- Masthead ----
+        val headerBg = if (p.dark) p.surface else p.ink
+        val headerInk = if (p.dark) p.ink else p.bg
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(headerBg)
+            setPadding(k.dp(16f), k.dp(26f), k.dp(16f), k.dp(18f))
+        }
         val titleRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(k.dp(4f), 0, k.dp(4f), 0)
         }
         titleRow.addView(View(this).apply { background = k.rounded(p.play, 0f) },
             LinearLayout.LayoutParams(k.dp(10f), k.dp(10f)).apply { rightMargin = k.dp(12f) })
-        titleRow.addView(k.text("NNA Clicker", 34f, 3), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        titleRow.addView(k.text("v${BuildConfig.VERSION_NAME}", 13f, 1, p.muted))
-        root.addView(titleRow)
-        root.addView(View(this), LinearLayout.LayoutParams(1, k.dp(10f)))
+        titleRow.addView(k.text("NNA Clicker", 34f, 3, headerInk), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        titleRow.addView(k.text("v${BuildConfig.VERSION_NAME}", 13f, 1, p.play))
+        header.addView(titleRow)
 
         // ---- Kesiapan ----
         val status = k.group()
@@ -282,11 +287,19 @@ class MainActivity : Activity() {
             startActivity(Intent(this, SetupActivity::class.java))
         }
 
-        setContentView(ScrollView(this).apply {
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(p.bg)
+        }
+        outer.addView(header)
+        outer.addView(ScrollView(this).apply {
             setBackgroundColor(p.bg)
             isVerticalScrollBarEnabled = false
             addView(root)
-        })
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
+        ))
+        setContentView(outer)
     }
 
     // ---------- komponen ----------
