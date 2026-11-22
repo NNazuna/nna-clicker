@@ -15,6 +15,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.content.res.ColorStateList
+import android.graphics.Color
 import android.os.Build
 import android.text.InputType
 import android.util.TypedValue
@@ -46,8 +47,8 @@ object Ui {
         bg = 0xFFE7EAE6.toInt(),
         surface = 0xFFF8F9F7.toInt(),
         ink = 0xFF1C2220.toInt(),
-        muted = 0xFF5D6763.toInt(),
-        line = 0xFFD5DAD5.toInt(),
+        muted = 0xFF4E5A55.toInt(),
+        line = 0xFFC7CEC8.toInt(),
         rec = 0xFFD12E3A.toInt(),
         play = 0xFF0E7564.toInt(),
         warn = 0xFFB7791F.toInt(),
@@ -58,8 +59,8 @@ object Ui {
         bg = 0xFF141817.toInt(),
         surface = 0xFF1E2321.toInt(),
         ink = 0xFFE4E9E6.toInt(),
-        muted = 0xFF97A29D.toInt(),
-        line = 0xFF2F3633.toInt(),
+        muted = 0xFFAAB5AF.toInt(),
+        line = 0xFF3A423E.toInt(),
         rec = 0xFFF2545F.toInt(),
         play = 0xFF34B39B.toInt(),
         warn = 0xFFE0A54A.toInt(),
@@ -170,7 +171,7 @@ class Kit(private val a: Activity) {
     /** Kelompok baris dengan latar permukaan. */
     fun group(): LinearLayout = LinearLayout(a).apply {
         orientation = LinearLayout.VERTICAL
-        background = rounded(p.surface, 6f, p.line)
+        background = rounded(p.surface, 2f, p.line)
         clipToOutline = true
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -184,22 +185,21 @@ class Kit(private val a: Activity) {
         }
     }
 
-    /** Judul bagian, dengan garis tipis dan aksi teks opsional di kanan. */
+    /** Judul bagian dengan garis dasar penuh, aksi teks opsional di kanan. */
     fun sectionHeader(title: String, action: String? = null, onAction: (() -> Unit)? = null): View {
+        val wrap = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
         val row = LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4f), dp(28f), dp(4f), dp(6f))
+            setPadding(dp(4f), dp(28f), dp(4f), dp(7f))
         }
-        row.addView(text(title, 17f, 2))
-        row.addView(View(a).apply { setBackgroundColor(p.line) }, LinearLayout.LayoutParams(0, dp(1f)).apply {
-            weight = 1f
-            leftMargin = dp(12f)
-            rightMargin = dp(12f)
-            gravity = Gravity.CENTER_VERTICAL
-        })
+        row.addView(text(title, 17f, 2), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         if (action != null) row.addView(textButton(action, p.play) { onAction?.invoke() })
-        return row
+        wrap.addView(row)
+        wrap.addView(View(a).apply { setBackgroundColor(p.line) }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 1,
+        ))
+        return wrap
     }
 
     fun textButton(label: String, color: Int, onClick: () -> Unit) = text(label, 15f, 2, color).apply {
@@ -213,7 +213,7 @@ class Kit(private val a: Activity) {
         gravity = Gravity.CENTER
         minHeight = dp(54f)
         setPadding(dp(20f), dp(15f), dp(20f), dp(15f))
-        background = ripple(rounded(color, 8f), dp(8f).toFloat())
+        background = ripple(rounded(color, 2f), dp(2f).toFloat())
         setOnClickListener { onClick() }
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -256,6 +256,7 @@ class Kit(private val a: Activity) {
     fun switchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit): Pair<View, android.widget.Switch> {
         val sw = android.widget.Switch(a).apply {
             isChecked = checked
+            tintSwitch(this)
             setOnCheckedChangeListener { _, c -> onChange(c) }
         }
         val row = LinearLayout(a).apply {
@@ -275,6 +276,24 @@ class Kit(private val a: Activity) {
         setPadding(dp(padH), dp(padV), dp(padH), dp(padV))
         addView(child)
     }
+
+    /** Keep platform switches inside the palette instead of the default gray/blue. */
+    fun tintSwitch(sw: android.widget.Switch) {
+        sw.thumbTintList = switchColors(p.play, p.muted)
+        sw.trackTintList = switchColors(withAlpha(p.play, 0.42f), p.line)
+    }
+
+    private fun switchColors(checked: Int, unchecked: Int) = ColorStateList(
+        arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+        intArrayOf(checked, unchecked),
+    )
+
+    private fun withAlpha(color: Int, factor: Float) = Color.argb(
+        (Color.alpha(color) * factor).toInt(),
+        Color.red(color),
+        Color.green(color),
+        Color.blue(color),
+    )
 }
 
 enum class Icon { RECORD, STOP, PLAY, LIST, CLOSE, GRIP, MORE, BACK, CAMERA, IMAGE, TRASH, FLAG, JUMP, CLOCK, TAP, SWIPE, PAUSE, SETTINGS }

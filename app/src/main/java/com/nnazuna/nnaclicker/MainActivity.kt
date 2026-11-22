@@ -108,6 +108,7 @@ class MainActivity : Activity() {
             }
         }
         shzSwitch = Switch(this).apply {
+            k.tintSwitch(this)
             setOnCheckedChangeListener { _, checked ->
                 if (suppressSwitch) return@setOnCheckedChangeListener
                 storage.useShizuku = checked
@@ -169,6 +170,7 @@ class MainActivity : Activity() {
         scopeCol.addView(scopeSub)
         scopeRow.addView(scopeCol, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         scopeSwitch = Switch(this).apply {
+            k.tintSwitch(this)
             setOnCheckedChangeListener { _, on -> if (!suppressScope) setOwnSettings(on) }
         }
         scopeRow.addView(scopeSwitch)
@@ -326,53 +328,50 @@ class MainActivity : Activity() {
         return value
     }
 
-    /** Four primary actions, reachable with one thumb instead of a scrolling row. */
+    /** Four primary actions in a compact dock, not a second card stack. */
     private fun quickActions(): View {
-        val box = LinearLayout(this).apply {
+        val wrap = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = k.rounded(p.surface, 6f, p.line)
-            clipToOutline = true
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = k.dp(12f) }
+            ).apply { topMargin = k.dp(14f) }
         }
+        wrap.addView(quickRule(horizontal = true))
 
-        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        top.addView(quickAction("Auto clicker", Icon.TAP) { newAutoClicker() }, weighted())
-        top.addView(quickRule())
-        top.addView(quickAction("Screenshots", Icon.IMAGE) {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        row.addView(quickAction("Auto tap", Icon.TAP) { newAutoClicker() }, weighted())
+        row.addView(quickRule())
+        row.addView(quickAction("Screens", Icon.IMAGE) {
             SnapPicker.show(this, k, storage, "Screenshots", null)
         }, weighted())
-        box.addView(top)
-        box.addView(quickRule(horizontal = true))
-
-        val bottom = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        bottom.addView(quickAction("Run log", Icon.CLOCK) {
+        row.addView(quickRule())
+        row.addView(quickAction("Run log", Icon.CLOCK) {
             startActivity(Intent(this, RunLogActivity::class.java))
         }, weighted())
-        bottom.addView(quickRule())
-        bottom.addView(quickAction("Setup", Icon.SETTINGS) {
+        row.addView(quickRule())
+        row.addView(quickAction("Setup", Icon.SETTINGS) {
             startActivity(Intent(this, SetupActivity::class.java))
         }, weighted())
-        box.addView(bottom)
-        return box
+        wrap.addView(row)
+        wrap.addView(quickRule(horizontal = true))
+        return wrap
     }
 
     private fun weighted() = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
 
     private fun quickAction(label: String, icon: Icon, onClick: () -> Unit): View =
         LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            minimumHeight = k.dp(52f)
-            setPadding(k.dp(10f), 0, k.dp(10f), 0)
+            minimumHeight = k.dp(66f)
             background = k.ripple(null, k.dp(4f).toFloat())
             setOnClickListener { onClick() }
-            addView(k.icon(icon, p.play, 18f))
-            addView(k.text(label, 14f, 2).apply {
+            addView(k.icon(icon, p.play, 21f))
+            addView(k.text(label, 11f, 2, p.ink).apply {
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(k.dp(8f), 0, 0, 0)
+                gravity = Gravity.CENTER
+                setPadding(0, k.dp(6f), 0, 0)
             })
         }
 
@@ -381,7 +380,7 @@ class MainActivity : Activity() {
         layoutParams = if (horizontal) {
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1)
         } else {
-            LinearLayout.LayoutParams(1, k.dp(52f))
+            LinearLayout.LayoutParams(1, k.dp(44f))
         }
     }
 
@@ -431,14 +430,14 @@ class MainActivity : Activity() {
         } else {
             setDot(a11yDot, p.rec)
             a11ySub.text = L.t("Off")
-            a11yAction.visibility = View.VISIBLE
+            a11yAction.visibility = View.GONE
         }
         panelButton.text = L.t(when {
             svc == null -> "Turn on accessibility service"
             svc.isPanelShown -> "Hide panel"
             else -> "Show panel"
         })
-        panelButton.background = k.ripple(k.rounded(if (svc?.isPanelShown == true) p.muted else p.play, 26f), k.dp(26f).toFloat())
+        panelButton.background = k.ripple(k.rounded(if (svc?.isPanelShown == true) p.muted else p.play, 2f), k.dp(2f).toFloat())
 
         // Shizuku
         suppressSwitch = true
@@ -543,8 +542,7 @@ class MainActivity : Activity() {
                 setPadding(k.dp(16f), k.dp(18f), k.dp(16f), 0)
             })
             listGroup.addView(k.text(
-                "Tap Show panel, open a game, and press the red button to record what you do. " +
-                    "Or use Auto clicker to repeat a tap without recording.",
+                "Turn on the service, tap Show panel, then press the red record button in the floating panel.",
                 14f, 0, p.muted,
             ).apply { setPadding(k.dp(16f), k.dp(6f), k.dp(16f), k.dp(18f)) })
             return
