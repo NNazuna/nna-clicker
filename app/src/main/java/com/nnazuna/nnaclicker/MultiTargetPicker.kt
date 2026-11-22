@@ -432,7 +432,7 @@ internal class MultiTargetPicker(svc: RecorderService) : ServiceOverlay(svc) {
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
         ))
-        bringPanelToFront()
+        svc.bringPanelToFront()
     }
 
     fun removeMultiGhost() {
