@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 - Android cloud backup is disabled. Recordings and screenshots stay on the device; use Export to move a recording.
 - English-only interface. The language picker and Indonesian translation table were removed, reducing startup work and APK size.
-- Main screen uses a sharper instrument-panel style with a 2×2 quick-action bar for Auto clicker, Screenshots, Run log, and Setup.
+- Main screen uses a sharper instrument-panel style with a compact quick-action dock for Auto tap, Screens, Run log, and Setup.
 - Recording list is cached and no longer rebuilt when nothing changed.
 
 ### Fixed

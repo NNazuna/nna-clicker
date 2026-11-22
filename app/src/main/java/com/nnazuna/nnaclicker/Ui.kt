@@ -191,10 +191,10 @@ class Kit(private val a: Activity) {
         val row = LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4f), dp(28f), dp(4f), dp(7f))
+            setPadding(dp(4f), dp(30f), dp(4f), dp(8f))
         }
-        row.addView(text(title, 17f, 2), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        if (action != null) row.addView(textButton(action, p.play) { onAction?.invoke() })
+        row.addView(text(title, 19f, 2), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        if (action != null) row.addView(textButton(action, p.muted) { onAction?.invoke() })
         wrap.addView(row)
         wrap.addView(View(a).apply { setBackgroundColor(p.line) }, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 1,

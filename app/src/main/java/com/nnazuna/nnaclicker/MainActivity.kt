@@ -47,6 +47,7 @@ class MainActivity : Activity() {
     // daftar & pengaturan
     private lateinit var listGroup: LinearLayout
     private lateinit var loopsValue: TextView
+    private lateinit var loopMinus: TextView
     private lateinit var speedBox: LinearLayout
     private lateinit var intervalValue: TextView
     private lateinit var startValue: TextView
@@ -78,7 +79,7 @@ class MainActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(k.dp(16f), k.dp(28f), k.dp(16f), k.dp(40f))
+            setPadding(k.dp(16f), k.dp(28f), k.dp(16f), k.dp(56f))
         }
 
         // ---- Judul ----
@@ -174,7 +175,7 @@ class MainActivity : Activity() {
             setOnCheckedChangeListener { _, on -> if (!suppressScope) setOwnSettings(on) }
         }
         scopeRow.addView(scopeSwitch)
-        scopeRow.setOnClickListener { scopeSwitch.toggle() }
+        scopeRow.setOnClickListener { if (scopeSwitch.isEnabled) scopeSwitch.toggle() }
         play.addView(scopeRow)
         play.addView(k.divider())
 
@@ -188,7 +189,7 @@ class MainActivity : Activity() {
         val loopLeft = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         loopLeft.addView(k.text("Repeat", 16f, 1))
         loopRow.addView(loopLeft, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        loopRow.addView(stepButton("−") { cfg.loops = (cfg.loops - 1).coerceAtLeast(0); saveCfg() })
+        loopRow.addView(stepButton("−") { cfg.loops = (cfg.loops - 1).coerceAtLeast(0); saveCfg() }.also { loopMinus = it })
         loopsValue = k.text("", 18f, 2).apply {
             gravity = Gravity.CENTER
             minWidth = k.dp(44f)
@@ -364,13 +365,18 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             minimumHeight = k.dp(66f)
+            contentDescription = label
+            isFocusable = true
             background = k.ripple(null, k.dp(4f).toFloat())
             setOnClickListener { onClick() }
-            addView(k.icon(icon, p.play, 21f))
+            addView(k.icon(icon, p.play, 21f).apply {
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            })
             addView(k.text(label, 11f, 2, p.ink).apply {
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 gravity = Gravity.CENTER
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 setPadding(0, k.dp(6f), 0, 0)
             })
         }
@@ -428,7 +434,7 @@ class MainActivity : Activity() {
             a11ySub.text = L.t("On")
             a11yAction.visibility = View.GONE
         } else {
-            setDot(a11yDot, p.rec)
+            setDot(a11yDot, p.muted)
             a11ySub.text = L.t("Off")
             a11yAction.visibility = View.GONE
         }
@@ -447,7 +453,7 @@ class MainActivity : Activity() {
         val perm = ShizukuBridge.hasPermission()
         val connected = ShizukuBridge.isConnected
         val (color, msg) = when {
-            !storage.useShizuku -> Pair(p.line, "Off")
+            !storage.useShizuku -> Pair(p.muted, "Off · optional, faster playback")
             !running -> Pair(p.warn, "Shizuku not running")
             !perm -> Pair(p.warn, "Permission needed")
             connected -> Pair(p.play, "Connected")
@@ -473,6 +479,7 @@ class MainActivity : Activity() {
         suppressScope = true
         scopeSwitch.isChecked = cfgRec != null
         scopeSwitch.isEnabled = sel != null
+        scopeSwitch.alpha = if (sel != null) 1f else 0.4f
         suppressScope = false
         scopeTitle.text = L.t("Only for this recording")
         scopeSub.text = when {
@@ -501,6 +508,8 @@ class MainActivity : Activity() {
     private fun refreshSettings() {
         loadCfg()
         loopsValue.text = if (cfg.loops == 0) "∞" else cfg.loops.toString()
+        loopMinus.isEnabled = cfg.loops > 0
+        loopMinus.alpha = if (cfg.loops > 0) 1f else 0.35f
         intervalValue.text = Ui.fmtSec(cfg.intervalMs)
         startValue.text = Ui.fmtSec(cfg.startDelayMs)
         limitValue.text = if (cfg.maxMinutes == 0) L.t("Off") else L.t("{} min", cfg.maxMinutes)
