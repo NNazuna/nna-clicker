@@ -79,8 +79,10 @@ class RecorderService : AccessibilityService() {
     /** Full-screen multi-target picker. */
     private var multiPicker: FrameLayout? = null
     private val multiTargets = mutableListOf<MultiTarget>()
+    /** Non-touchable numbered markers kept visible while multi-target playback runs. */
+    private var multiGhost: View? = null
 
-    private class MultiTarget(val x: Float, val y: Float, val view: View)
+    private class MultiTarget(var x: Float, var y: Float, val view: View)
     /** Lapisan gelap saat memutar (tidak menangkap sentuhan) + menjaga layar tetap menyala. */
     private var dimView: View? = null
     private var playStartedAt = 0L
@@ -184,6 +186,7 @@ class RecorderService : AccessibilityService() {
         stopAll()
         removePicker(restorePanel = false)
         removeMultiPicker(restorePanel = false)
+        removeMultiGhost()
         removeCapture()
         hidePanel()
         instance = null
@@ -583,6 +586,15 @@ class RecorderService : AccessibilityService() {
         val size = screenSize()
         lateinit var countLabel: TextView
         lateinit var startButton: TextView
+        lateinit var everyLabel: TextView
+        lateinit var holdLabel: TextView
+        var everyMs = storage.globalSettings().intervalMs.coerceIn(100L, 3_600_000L)
+        var holdMs = 60L
+
+        fun refreshTiming() {
+            everyLabel.text = L.t("Every {}", Ui.fmtSec(everyMs))
+            holdLabel.text = L.t("Hold {} ms", holdMs)
+        }
 
         fun refreshMulti() {
             val n = multiTargets.size
@@ -613,16 +625,49 @@ class RecorderService : AccessibilityService() {
                 elevation = dp(4f).toFloat()
             }
             val target = MultiTarget(px, py, marker)
-            marker.setOnClickListener {
-                multiTargets.remove(target)
-                frame.removeView(marker)
-                refreshMulti()
-            }
-            multiTargets.add(target)
-            frame.addView(marker, FrameLayout.LayoutParams(dp(38f), dp(38f)).apply {
+            val lp = FrameLayout.LayoutParams(dp(38f), dp(38f)).apply {
                 leftMargin = (px - dp(19f)).toInt()
                 topMargin = (py - dp(19f)).toInt()
-            })
+            }
+            var startRawX = 0f
+            var startRawY = 0f
+            var startLeft = 0
+            var startTop = 0
+            var moved = false
+            marker.setOnTouchListener { _, e ->
+                when (e.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        startRawX = e.rawX; startRawY = e.rawY
+                        startLeft = lp.leftMargin; startTop = lp.topMargin
+                        moved = false
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (!moved && Math.hypot((e.rawX - startRawX).toDouble(), (e.rawY - startRawY).toDouble()) > dp(6f)) {
+                            moved = true
+                        }
+                        if (moved) {
+                            lp.leftMargin = (startLeft + (e.rawX - startRawX)).toInt()
+                                .coerceIn(0, maxOf(0, size.x - dp(38f)))
+                            lp.topMargin = (startTop + (e.rawY - startRawY)).toInt()
+                                .coerceIn(0, maxOf(0, size.y - dp(38f)))
+                            marker.layoutParams = lp
+                            target.x = lp.leftMargin + dp(19f).toFloat()
+                            target.y = lp.topMargin + dp(19f).toFloat()
+                        }
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (!moved) {
+                            multiTargets.remove(target)
+                            frame.removeView(marker)
+                            refreshMulti()
+                            toast("Target removed")
+                        }
+                    }
+                }
+                true
+            }
+            multiTargets.add(target)
+            frame.addView(marker, lp)
             refreshMulti()
         }
 
@@ -661,6 +706,65 @@ class RecorderService : AccessibilityService() {
             setPadding(0, dp(3f), 0, 0)
         }
         top.addView(countLabel)
+
+        everyLabel = TextView(this).apply {
+            setTextColor(COLOR_PLAY)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            typeface = Ui.font(this@RecorderService, 2)
+            gravity = Gravity.CENTER
+        }
+        holdLabel = TextView(this).apply {
+            setTextColor(COLOR_PLAY)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            typeface = Ui.font(this@RecorderService, 2)
+            gravity = Gravity.CENTER
+        }
+
+        fun stepButton(label: String, onClick: () -> Unit) = TextView(this).apply {
+            text = label
+            gravity = Gravity.CENTER
+            minWidth = dp(30f)
+            minHeight = dp(30f)
+            setTextColor(COLOR_PLAY)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            typeface = Ui.font(this@RecorderService, 2)
+            background = RippleDrawable(
+                android.content.res.ColorStateList.valueOf(0x33FFFFFF), null,
+                GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFFFFFFFF.toInt()) },
+            )
+            setOnClickListener { onClick() }
+        }
+        fun timingRow(label: String, value: () -> TextView, stepDown: () -> Unit, stepUp: () -> Unit): LinearLayout {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(2f), 0, 0)
+            }
+            row.addView(TextView(this).apply {
+                text = label
+                setTextColor(0x99FFFFFF.toInt())
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                typeface = Ui.font(this@RecorderService, 0)
+            }, LinearLayout.LayoutParams(dp(42f), LinearLayout.LayoutParams.WRAP_CONTENT))
+            row.addView(stepButton("−", stepDown))
+            row.addView(value(), LinearLayout.LayoutParams(dp(62f), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.CENTER
+            })
+            row.addView(stepButton("+", stepUp))
+            return row
+        }
+
+        top.addView(timingRow("Every", { everyLabel }, {
+            everyMs = (everyMs - 100L).coerceAtLeast(100L); refreshTiming()
+        }, {
+            everyMs = (everyMs + 100L).coerceAtMost(3_600_000L); refreshTiming()
+        }))
+        top.addView(timingRow("Hold", { holdLabel }, {
+            holdMs = (holdMs - 20L).coerceAtLeast(20L); refreshTiming()
+        }, {
+            holdMs = (holdMs + 20L).coerceAtMost(2_000L); refreshTiming()
+        }))
+        refreshTiming()
 
         val bottom = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -714,7 +818,7 @@ class RecorderService : AccessibilityService() {
                 } else {
                     val points = multiTargets.map { PointF(it.x, it.y) }
                     removeMultiPicker(restorePanel = true)
-                    beginMultiTap(points)
+                    beginMultiTap(points, everyMs, holdMs)
                 }
             }
         }
@@ -760,15 +864,53 @@ class RecorderService : AccessibilityService() {
         if (restorePanel) panel?.visibility = View.VISIBLE
     }
 
-    private fun beginMultiTap(points: List<PointF>) {
-        val every = storage.globalSettings().intervalMs.coerceIn(100L, 3_600_000L)
+    private fun showMultiGhost(points: List<PointF>) {
+        removeMultiGhost()
+        if (points.isEmpty()) return
+        val frame = FrameLayout(this)
+        val size = screenSize()
+        points.forEachIndexed { i, p ->
+            val marker = TextView(this).apply {
+                text = (i + 1).toString()
+                gravity = Gravity.CENTER
+                setTextColor(COLOR_PLAY)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                typeface = Ui.font(this@RecorderService, 2)
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(0xCC1C2220.toInt())
+                    setStroke(dp(2f), COLOR_PLAY)
+                }
+            }
+            frame.addView(marker, FrameLayout.LayoutParams(dp(30f), dp(30f)).apply {
+                leftMargin = (p.x - dp(15f)).toInt().coerceIn(0, maxOf(0, size.x - dp(30f)))
+                topMargin = (p.y - dp(15f)).toInt().coerceIn(0, maxOf(0, size.y - dp(30f)))
+            })
+        }
+        multiGhost = frame
+        wm.addView(frame, overlayParams(
+            size.x, size.y,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+        ))
+        bringPanelToFront()
+    }
+
+    private fun removeMultiGhost() {
+        multiGhost?.let { runCatching { wm.removeView(it) } }
+        multiGhost = null
+    }
+
+    private fun beginMultiTap(points: List<PointF>, every: Long, hold: Long) {
         val rec = Recording(UUID.randomUUID().toString(), "", System.currentTimeMillis(), mutableListOf())
         val label = FlowStep(0, FlowStep.LABEL, ref = FlowStep.newId(), name = "Repeat")
         rec.flows.add(label)
         var at = 1L
         for (point in points) {
             rec.gestures.add(RecGesture(at, listOf(
-                Stroke(listOf(TouchPoint(point.x, point.y, 0), TouchPoint(point.x, point.y, 60))),
+                Stroke(listOf(TouchPoint(point.x, point.y, 0), TouchPoint(point.x, point.y, hold))),
             )))
             at += every
         }
@@ -776,6 +918,7 @@ class RecorderService : AccessibilityService() {
         rec.name = "Multi tap · ${points.size} targets · every ${FlowUi.sec(every)}"
         storage.save(rec)
         playFrom(rec.id, -1, 1500)
+        showMultiGhost(points)
         toast("Multi tap starts in 1.5 s. Volume Down stops.")
     }
 
@@ -1045,6 +1188,7 @@ class RecorderService : AccessibilityService() {
     private var stopByUser = false
 
     private fun startPlaying(fromAt: Long = -1, minDelayMs: Long = 0) {
+        removeMultiGhost()
         val rec = storage.selected()
         if (rec == null || Program(rec).isEmpty) {
             toast("No recording selected")
@@ -1258,6 +1402,7 @@ class RecorderService : AccessibilityService() {
         if (state != State.PLAYING) return
         if (!stopByUser && storage.alertDone) alert()
         hideDim()
+        removeMultiGhost()
         handler.removeCallbacks(ticker)
         handler.removeCallbacks(limitStop)
         player = null
@@ -1300,6 +1445,7 @@ class RecorderService : AccessibilityService() {
 
     /** Dipanggil dari tombol volume dan MainActivity. */
     fun stopAll() {
+        removeMultiGhost()
         when (state) {
             State.RECORDING -> stopRecording()
             State.PLAYING -> stopPlaying()

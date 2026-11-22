@@ -58,7 +58,7 @@ The app falls back to the Standard engine automatically if Shizuku is unavailabl
 **Quick start**
 - **Auto clicker**: tap one spot or repeat a swipe at a set interval, without recording
 - **Quick auto tap**: open the floating panel, tap **Auto tap here**, then tap the target once. It repeats after 1.5 seconds; Volume Down stops it
-- **Multi-target auto tap**: place numbered targets over the app, tap **Start**, and NNA Clicker taps them in order until stopped. Tap a numbered target to remove it
+- **Multi-target auto tap**: place numbered targets over the app, drag them to move, and tap **Start**. Targets repeat in order until stopped; tap a target to remove it. Interval and touch hold are adjustable in the picker.
 - **Alert when finished**: vibrate and sound when playback ends or stops with an error
 
 **Controls**
