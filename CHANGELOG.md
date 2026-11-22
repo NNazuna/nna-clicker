@@ -3,6 +3,14 @@
 All notable changes to NNA Clicker are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Unit tests for the playback program, timeline, evdev coordinate mapping, and model constraints.
+
+### Changed
+- Android cloud backup is disabled. Recordings and screenshots stay on the device; use Export to move a recording.
+
 ## [2.2.0] - 2026-10-16
 
 ### Added
