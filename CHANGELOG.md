@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 - Playback settings loaded from storage or imported files are now clamped to safe ranges. The constructor previously bypassed the setter validation.
+- Local debug builds no longer require the private signing password; releases still use the stable key. CI passes the signing secrets explicitly.
 
 ## [2.2.0] - 2026-10-16
 
