@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- Quick auto tap: open the floating panel, tap **Auto tap here**, then tap the target once. It repeats after 1.5 seconds; Volume Down stops it.
 - Unit tests for the playback program, timeline, evdev coordinate mapping, and model constraints.
+- Original N+play app icon with adaptive and monochrome layers, replacing the previous character artwork.
 
 ### Changed
 - Android cloud backup is disabled. Recordings and screenshots stay on the device; use Export to move a recording.

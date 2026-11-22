@@ -57,6 +57,7 @@ The app falls back to the Standard engine automatically if Shizuku is unavailabl
 
 **Quick start**
 - **Auto clicker**: tap one spot or repeat a swipe at a set interval, without recording
+- **Quick auto tap**: open the floating panel, tap **Auto tap here**, then tap the target once. It repeats after 1.5 seconds; Volume Down stops it
 - **Alert when finished**: vibrate and sound when playback ends or stops with an error
 
 **Controls**

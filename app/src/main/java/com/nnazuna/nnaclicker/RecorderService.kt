@@ -23,6 +23,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -72,6 +73,8 @@ class RecorderService : AccessibilityService() {
     private var minimized = false
     /** Recording list opened from the panel. */
     private var menuView: View? = null
+    /** Full-screen one-tap picker for the quick auto tap flow. */
+    private var picker: View? = null
     /** Lapisan gelap saat memutar (tidak menangkap sentuhan) + menjaga layar tetap menyala. */
     private var dimView: View? = null
     private var playStartedAt = 0L
@@ -145,6 +148,10 @@ class RecorderService : AccessibilityService() {
 
     /** Volume Bawah = berhenti merekam / memutar, tanpa perlu menyentuh layar. */
     override fun onKeyEvent(event: KeyEvent): Boolean {
+        if (picker != null && event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            if (event.action == KeyEvent.ACTION_DOWN) removePicker(restorePanel = true)
+            return true
+        }
         if (event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN && state != State.IDLE) {
             if (event.action == KeyEvent.ACTION_DOWN) handler.post { stopAll() }
             return true
@@ -165,6 +172,7 @@ class RecorderService : AccessibilityService() {
     private fun cleanup() {
         if (instance == null) return
         stopAll()
+        removePicker(restorePanel = false)
         removeCapture()
         hidePanel()
         instance = null
@@ -456,6 +464,94 @@ class RecorderService : AccessibilityService() {
         menuView = null
     }
 
+    // ---------- quick auto tap ----------
+
+    /** One tap in the target app, then repeat it until stopped. */
+    private fun startQuickTap() {
+        if (state != State.IDLE) {
+            toast("Stop recording or playback first")
+            return
+        }
+        if (picker != null) return
+        closeMenu()
+        panel?.visibility = View.INVISIBLE
+
+        val frame = FrameLayout(this)
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16f), dp(12f), dp(10f), dp(12f))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(4f).toFloat()
+                setColor(0xF21C2220.toInt())
+            }
+        }
+        card.addView(TextView(this).apply {
+            text = L.t("Tap the spot to repeat")
+            setTextColor(0xFFF1F4F2.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            typeface = Ui.font(this@RecorderService, 2)
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        card.addView(TextView(this).apply {
+            text = L.t("Cancel")
+            setTextColor(COLOR_PLAY)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            typeface = Ui.font(this@RecorderService, 2)
+            setPadding(dp(14f), dp(6f), dp(8f), dp(6f))
+            setOnClickListener { removePicker(restorePanel = true) }
+        })
+        card.isClickable = true
+        frame.addView(card, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            gravity = Gravity.TOP
+            topMargin = dp(72f)
+            leftMargin = dp(16f)
+            rightMargin = dp(16f)
+        })
+        frame.setOnTouchListener { _, e ->
+            if (e.actionMasked == MotionEvent.ACTION_UP) {
+                val x = e.rawX
+                val y = e.rawY
+                removePicker(restorePanel = true)
+                beginQuickTap(x, y)
+            }
+            true
+        }
+
+        val size = screenSize()
+        picker = frame
+        wm.addView(frame, overlayParams(
+            size.x, size.y,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+        ))
+    }
+
+    private fun removePicker(restorePanel: Boolean) {
+        picker?.let { runCatching { wm.removeView(it) } }
+        picker = null
+        if (restorePanel) panel?.visibility = View.VISIBLE
+    }
+
+    private fun beginQuickTap(x: Float, y: Float) {
+        val every = storage.globalSettings().intervalMs.coerceIn(100L, 3_600_000L)
+        val rec = Recording(UUID.randomUUID().toString(), "", System.currentTimeMillis(), mutableListOf())
+        val label = FlowStep(0, FlowStep.LABEL, ref = FlowStep.newId(), name = "Repeat")
+        val gesture = RecGesture(1, listOf(
+            Stroke(listOf(TouchPoint(x, y, 0), TouchPoint(x, y, 60))),
+        ))
+        val jump = FlowStep(gesture.at + gesture.duration + every, FlowStep.GOTO, ref = label.ref)
+        rec.flows.add(label)
+        rec.gestures.add(gesture)
+        rec.flows.add(jump)
+        rec.name = "Auto tap · every ${FlowUi.sec(every)}"
+        storage.save(rec)
+        playFrom(rec.id, -1, 1500)
+        toast("Auto tap starts in 1.5 s. Volume Down stops.")
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     private fun openMenu() {
         val anchor = panel ?: return
@@ -512,6 +608,7 @@ class RecorderService : AccessibilityService() {
         ))
         box.addView(View(this).apply { setBackgroundColor(0x33FFFFFF) },
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1f)).apply { setMargins(dp(8f), dp(4f), dp(8f), dp(4f)) })
+        box.addView(row("Auto tap here", COLOR_PLAY, true) { closeMenu(); startQuickTap() })
         box.addView(row("Open NNA Clicker", 0xFFF1F4F2.toInt(), false) { closeMenu(); openApp() })
         box.addView(row("Shrink panel", 0xFFF1F4F2.toInt(), false) { setMinimized(true) })
 
