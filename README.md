@@ -174,10 +174,11 @@ Bug reports, feature requests, and pull requests are always welcome.
 
 Many online games prohibit automation in their terms of service. You are responsible for how you use this app.
 
+## License
+
+NNA Clicker is free software, licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0-only). The bundled Barlow fonts are under the [SIL Open Font License](app/src/main/assets/fonts/OFL.txt).
+
 ---
 
 <p align="center">Made by <a href="https://github.com/NNazuna">NNazuna</a></p>
 
-## License
-
-NNA Clicker is free software, licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0-only). The bundled Barlow fonts are under the [SIL Open Font License](app/src/main/assets/fonts/OFL.txt).
