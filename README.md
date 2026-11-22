@@ -149,7 +149,11 @@ gradle testDebugUnitTest
 gradle assembleDebug
 ```
 
-Every push to `main` builds the APK with GitHub Actions. When `versionName` in `app/build.gradle.kts` changes, a new release is published with notes taken from [`CHANGELOG.md`](CHANGELOG.md).
+Every push to `main` runs the tests, builds the APK, and uploads it as a workflow artifact. A push does **not** publish a release.
+
+## Releasing
+
+Releases are manual. Set `versionName` in `app/build.gradle.kts`, add the matching section to `CHANGELOG.md`, then run **Actions › Build › Run workflow** with `publish_release` enabled. That run moves the version tag and publishes the APK.
 
 Builds are signed with the fixed key in `app/signing/` so new versions install over previous ones. Only install APKs published on this repository's Releases page.
 

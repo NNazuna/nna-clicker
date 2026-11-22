@@ -3,6 +3,12 @@ name: Build
 on:
   push:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Publish a GitHub release for the current versionName"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -57,7 +63,7 @@ jobs:
 
       # Remove stale releases: tags that are not vX.Y.Z, or versions newer than the one being built
       - name: Remove stale releases
-        if: github.ref == 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -77,13 +83,13 @@ jobs:
 
       # Point the version tag at this commit, so a re-push of the same version replaces the old tag
       - name: Move version tag
-        if: github.ref == 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true' && github.ref == 'refs/heads/main'
         run: |
           git tag -f "v${{ steps.meta.outputs.version }}"
           git push -f origin "refs/tags/v${{ steps.meta.outputs.version }}"
 
       - name: Publish release
-        if: github.ref == 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.meta.outputs.version }}
