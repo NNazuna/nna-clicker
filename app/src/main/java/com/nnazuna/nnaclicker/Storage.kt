@@ -56,6 +56,8 @@ class Storage(context: Context) {
         File(multiDir, "${s.id}.json").writeText(s.toJson().toString())
     }
 
+    fun nextSetupName(): String = AutoTap.nextSetupName(setups().map { it.name })
+
     fun deleteSetup(id: String) {
         File(multiDir, "$id.json").delete()
     }

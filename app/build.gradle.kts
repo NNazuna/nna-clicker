@@ -67,4 +67,6 @@ dependencies {
     implementation("dev.rikka.shizuku:api:$shizuku")
     implementation("dev.rikka.shizuku:provider:$shizuku")
     testImplementation("junit:junit:4.13.2")
+    // Real org.json for unit tests; the Android stub returns empty values.
+    testImplementation("org.json:json:20240303")
 }

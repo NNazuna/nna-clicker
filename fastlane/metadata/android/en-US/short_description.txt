@@ -1,0 +1,1 @@
+Record taps and swipes, then replay them. Auto clicker with image steps.

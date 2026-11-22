@@ -301,7 +301,7 @@ class Kit(private val a: Activity) {
     )
 }
 
-enum class Icon { RECORD, STOP, PLAY, LIST, CLOSE, GRIP, MORE, BACK, CAMERA, IMAGE, TRASH, FLAG, JUMP, CLOCK, TAP, SWIPE, PAUSE, SETTINGS }
+enum class Icon { RECORD, STOP, PLAY, LIST, CLOSE, GRIP, MORE, BACK, CAMERA, IMAGE, TRASH, FLAG, JUMP, CLOCK, TAP, SWIPE, PAUSE, SETTINGS, EDIT, CHECK }
 
 /** Ikon digambar langsung di canvas supaya tajam & konsisten di semua ROM (tanpa emoji). */
 class IconDrawable(private val kind: Icon, color: Int, private val size: Int) : Drawable() {
@@ -378,6 +378,20 @@ class IconDrawable(private val kind: Icon, color: Int, private val size: Int) : 
                     lineTo(cx - s * 0.15f, cy + s * 0.28f)
                     lineTo(cx + s * 0.15f, cy + s * 0.28f)
                     lineTo(cx + s * 0.19f, cy - s * 0.12f)
+                }
+                c.drawPath(path, stroke)
+            }
+            Icon.EDIT -> {
+                // Pencil: a slanted body with a short nib line under it.
+                c.drawLine(cx - s * 0.20f, cy + s * 0.20f, cx + s * 0.18f, cy - s * 0.18f, stroke)
+                c.drawLine(cx + s * 0.10f, cy - s * 0.26f, cx + s * 0.26f, cy - s * 0.10f, stroke)
+                c.drawLine(cx - s * 0.26f, cy + s * 0.28f, cx + s * 0.04f, cy + s * 0.28f, stroke)
+            }
+            Icon.CHECK -> {
+                val path = Path().apply {
+                    moveTo(cx - s * 0.26f, cy + s * 0.02f)
+                    lineTo(cx - s * 0.08f, cy + s * 0.20f)
+                    lineTo(cx + s * 0.27f, cy - s * 0.18f)
                 }
                 c.drawPath(path, stroke)
             }

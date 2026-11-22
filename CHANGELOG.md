@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Quick auto tap: open the floating panel, tap **Auto tap here**, then tap the target once. It repeats after 1.5 seconds; Volume Down stops it.
 - Unit tests for the playback program, timeline, evdev coordinate mapping, and model constraints.
 - Original N+play app icon with adaptive and monochrome layers, replacing the previous character artwork.
+- A small **Running** pill at the top of the screen while quick or multi-target auto tap runs, with its own Stop button. Drag it aside if it covers something.
+- Unit tests for the auto tap loops (timing, per-target delay, clamping), saved setup JSON, and setup naming.
 
 ### Changed
 - Support links for Ko-fi, Saweria, and Trakteer in the app, README, and repository funding card.
@@ -19,10 +21,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - English-only interface. The language picker and Indonesian translation table were removed, reducing startup work and APK size.
 - Main and Setup screens share a flat instrument-panel style with condensed headings. Main keeps a compact tool dock for Auto tap, Screens, Log, and Setup.
 - Recording list is cached and no longer rebuilt when nothing changed.
+- Release APKs are now signed release builds instead of debug builds. Publishing refuses to run without the signing secrets, and the release cleanup no longer deletes tags that aren't `vX.Y.Z`.
+- The floating overlays (quick tap, multi-target picker, saved setups, running pill) moved out of the accessibility service into their own files, with shared overlay colors.
+- Saved setups list redesigned: each setup shows its tap count, timing, and quick Open, Rename, and Delete buttons. Long lists scroll, and a **New setup** button starts a fresh one.
 
 ### Fixed
 - Playback settings loaded from storage or imported files are now clamped to safe ranges. The constructor previously bypassed the setter validation.
 - Local debug builds no longer require the private signing password; releases still use the stable key. CI passes the signing secrets explicitly.
+- Quick auto tap and multi-target runs no longer add a new recording every time Start is pressed. Each reuses one recording that is overwritten on the next run.
+- Saved setups can now be renamed and deleted (with a confirmation step).
+- New setup names no longer repeat after a setup is deleted.
 
 ## [2.2.0] - 2026-10-16
 
