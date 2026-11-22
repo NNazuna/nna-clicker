@@ -225,14 +225,14 @@ class PlaySettings(
     jitterPct: Float = 0f,
 ) {
     /** 0 = repeat until stopped. */
-    var loops = loops; set(v) { field = v.coerceAtLeast(0) }
-    var speed = speed; set(v) { field = v.coerceIn(0.1f, 10f) }
-    var intervalMs = intervalMs; set(v) { field = v.coerceAtLeast(0L) }
-    var startDelayMs = startDelayMs; set(v) { field = v.coerceAtLeast(0L) }
+    var loops = loops.coerceAtLeast(0); set(v) { field = v.coerceAtLeast(0) }
+    var speed = speed.coerceIn(0.1f, 10f); set(v) { field = v.coerceIn(0.1f, 10f) }
+    var intervalMs = intervalMs.coerceAtLeast(0L); set(v) { field = v.coerceAtLeast(0L) }
+    var startDelayMs = startDelayMs.coerceAtLeast(0L); set(v) { field = v.coerceAtLeast(0L) }
     /** Auto stop after this many minutes (0 = off). */
-    var maxMinutes = maxMinutes; set(v) { field = v.coerceIn(0, 24 * 60) }
-    var jitterPx = jitterPx; set(v) { field = v.coerceIn(0f, 200f) }
-    var jitterPct = jitterPct; set(v) { field = v.coerceIn(0f, 90f) }
+    var maxMinutes = maxMinutes.coerceIn(0, 24 * 60); set(v) { field = v.coerceIn(0, 24 * 60) }
+    var jitterPx = jitterPx.coerceIn(0f, 200f); set(v) { field = v.coerceIn(0f, 200f) }
+    var jitterPct = jitterPct.coerceIn(0f, 90f); set(v) { field = v.coerceIn(0f, 90f) }
 
     fun copy() = PlaySettings(loops, speed, intervalMs, startDelayMs, maxMinutes, jitterPx, jitterPct)
 
