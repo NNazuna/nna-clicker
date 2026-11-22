@@ -81,8 +81,10 @@ class RecorderService : AccessibilityService() {
     private val multiTargets = mutableListOf<MultiTarget>()
     /** Non-touchable numbered markers kept visible while multi-target playback runs. */
     private var multiGhost: View? = null
+    /** Saved setup list opened from the panel. */
+    private var setupList: View? = null
 
-    private class MultiTarget(var x: Float, var y: Float, val view: View)
+    private class MultiTarget(var x: Float, var y: Float, var delayMs: Long, val view: View)
     /** Lapisan gelap saat memutar (tidak menangkap sentuhan) + menjaga layar tetap menyala. */
     private var dimView: View? = null
     private var playStartedAt = 0L
@@ -186,6 +188,7 @@ class RecorderService : AccessibilityService() {
         stopAll()
         removePicker(restorePanel = false)
         removeMultiPicker(restorePanel = false)
+        closeSetupList()
         removeMultiGhost()
         removeCapture()
         hidePanel()
@@ -237,6 +240,9 @@ class RecorderService : AccessibilityService() {
 
     /** Entry point from the main screen: place numbered targets over any app. */
     fun startMultiTarget() = startMultiTap()
+
+    /** Entry point from the main screen: open the saved setup list. */
+    fun showSavedSetups() = showSetupList()
 
     @SuppressLint("ClickableViewAccessibility")
     fun showPanel() {
@@ -481,6 +487,79 @@ class RecorderService : AccessibilityService() {
         menuView = null
     }
 
+    // ---------- saved multi-target setups ----------
+
+    private fun closeSetupList() {
+        setupList?.let { runCatching { wm.removeView(it) } }
+        setupList = null
+    }
+
+    private fun showSetupList() {
+        val setups = storage.setups()
+        if (setups.isEmpty()) {
+            toast("No saved setups yet. Press Start once to save one.")
+            return
+        }
+        closeSetupList()
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8f), dp(8f), dp(8f), dp(8f))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(6f).toFloat()
+                setColor(0xFF1C2220.toInt())
+                setStroke(dp(1f), 0x33FFFFFF)
+            }
+        }
+        fun row(label: String, onClick: (() -> Unit)?) = TextView(this).apply {
+            text = label
+            setTextColor(0xFFF1F4F2.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            typeface = Ui.font(this@RecorderService, 1)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
+            if (onClick != null) {
+                background = RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(0x33FFFFFF), null,
+                    GradientDrawable().apply { cornerRadius = dp(4f).toFloat(); setColor(0xFFFFFFFF.toInt()) },
+                )
+                setOnClickListener { onClick() }
+            }
+        }
+        box.addView(row("Saved setups", null).apply {
+            setTextColor(0x99FFFFFF.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        })
+        for (s in setups) {
+            box.addView(row("${s.name} · ${s.points.size} targets") {
+                closeSetupList()
+                startMultiTap(s)
+            })
+        }
+        box.addView(row("Close") { closeSetupList() }.apply {
+            setTextColor(COLOR_PLAY)
+        })
+        val size = screenSize()
+        val w = minOf(dp(300f), size.x - dp(16f))
+        val params = overlayParams(
+            w, WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+        )
+        box.measure(
+            View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(size.y, View.MeasureSpec.AT_MOST),
+        )
+        params.x = (size.x - w) / 2
+        params.y = dp(120f)
+        box.setOnTouchListener { _, e ->
+            if (e.actionMasked == MotionEvent.ACTION_OUTSIDE) { closeSetupList(); true } else false
+        }
+        setupList = box
+        wm.addView(box, params)
+    }
+
     // ---------- quick auto tap ----------
 
     /** One tap in the target app, then repeat it until stopped. */
@@ -572,15 +651,19 @@ class RecorderService : AccessibilityService() {
     // ---------- multi-target auto tap ----------
 
     /** Place numbered targets, then tap them in order, forever. */
-    private fun startMultiTap() {
+    private fun startMultiTap(initial: MultiSetup? = null) {
         if (state != State.IDLE) {
             toast("Stop recording or playback first")
             return
         }
         if (multiPicker != null) return
         closeMenu()
+        closeSetupList()
         panel?.visibility = View.INVISIBLE
         multiTargets.clear()
+        var selectedTarget: MultiTarget? = null
+        var savedId: String? = initial?.id
+        var savedName: String? = initial?.name
 
         val frame = FrameLayout(this)
         val size = screenSize()
@@ -588,8 +671,11 @@ class RecorderService : AccessibilityService() {
         lateinit var startButton: TextView
         lateinit var everyLabel: TextView
         lateinit var holdLabel: TextView
-        var everyMs = storage.globalSettings().intervalMs.coerceIn(100L, 3_600_000L)
-        var holdMs = 60L
+        lateinit var delayBox: LinearLayout
+        lateinit var delayLabel: TextView
+        lateinit var timingBox: LinearLayout
+        var everyMs = initial?.everyMs ?: storage.globalSettings().intervalMs.coerceIn(100L, 3_600_000L)
+        var holdMs = initial?.holdMs ?: 60L
 
         fun refreshTiming() {
             everyLabel.text = Ui.fmtSec(everyMs)
@@ -598,13 +684,23 @@ class RecorderService : AccessibilityService() {
 
         fun refreshMulti() {
             val n = multiTargets.size
-            countLabel.text = if (n == 0) L.t("Tap a spot") else L.t("{} targets", n)
+            val selected = selectedTarget?.takeIf { multiTargets.contains(it) }
+            if (selected == null) {
+                selectedTarget = null
+                countLabel.text = if (n == 0) L.t("Tap a spot") else L.t("{} targets", n)
+                delayBox.visibility = View.GONE
+            } else {
+                countLabel.text = L.t("Target {}/{}", multiTargets.indexOf(selected) + 1, n)
+                timingBox.visibility = View.VISIBLE
+                delayBox.visibility = View.VISIBLE
+                delayLabel.text = "${selected.delayMs} ms"
+            }
             startButton.isEnabled = n > 0
             startButton.alpha = if (n > 0) 1f else 0.35f
             multiTargets.forEachIndexed { i, t -> (t.view as TextView).text = (i + 1).toString() }
         }
 
-        fun addTarget(x: Float, y: Float) {
+        fun addTarget(x: Float, y: Float, delayMs: Long = 0L) {
             val px = x.coerceIn(dp(20f).toFloat(), (size.x - dp(20f)).toFloat())
             val py = y.coerceIn(dp(20f).toFloat(), (size.y - dp(20f)).toFloat())
             val marker = TextView(this).apply {
@@ -620,7 +716,7 @@ class RecorderService : AccessibilityService() {
                 }
                 elevation = dp(4f).toFloat()
             }
-            val target = MultiTarget(px, py, marker)
+            val target = MultiTarget(px, py, delayMs, marker)
             val lp = FrameLayout.LayoutParams(dp(38f), dp(38f)).apply {
                 leftMargin = (px - dp(19f)).toInt()
                 topMargin = (py - dp(19f)).toInt()
@@ -630,16 +726,30 @@ class RecorderService : AccessibilityService() {
             var startLeft = 0
             var startTop = 0
             var moved = false
+            var longPressed = false
+            val longPress = Runnable {
+                if (!moved) {
+                    longPressed = true
+                    multiTargets.remove(target)
+                    if (selectedTarget == target) selectedTarget = null
+                    frame.removeView(marker)
+                    refreshMulti()
+                    toast("Target removed")
+                }
+            }
             marker.setOnTouchListener { _, e ->
                 when (e.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         startRawX = e.rawX; startRawY = e.rawY
                         startLeft = lp.leftMargin; startTop = lp.topMargin
                         moved = false
+                        longPressed = false
+                        handler.postDelayed(longPress, 500)
                     }
                     MotionEvent.ACTION_MOVE -> {
                         if (!moved && Math.hypot((e.rawX - startRawX).toDouble(), (e.rawY - startRawY).toDouble()) > dp(6f)) {
                             moved = true
+                            handler.removeCallbacks(longPress)
                         }
                         if (moved) {
                             lp.leftMargin = (startLeft + (e.rawX - startRawX)).toInt()
@@ -652,13 +762,13 @@ class RecorderService : AccessibilityService() {
                         }
                     }
                     MotionEvent.ACTION_UP -> {
-                        if (!moved) {
-                            multiTargets.remove(target)
-                            frame.removeView(marker)
+                        handler.removeCallbacks(longPress)
+                        if (!moved && !longPressed) {
+                            selectedTarget = if (selectedTarget == target) null else target
                             refreshMulti()
-                            toast("Target removed")
                         }
                     }
+                    MotionEvent.ACTION_CANCEL -> handler.removeCallbacks(longPress)
                 }
                 true
             }
@@ -773,7 +883,7 @@ class RecorderService : AccessibilityService() {
             r.addView(stepButton("+", stepUp))
             return r
         }
-        val timingBox = LinearLayout(this).apply {
+        timingBox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
             setPadding(0, dp(4f), 0, 0)
@@ -790,6 +900,25 @@ class RecorderService : AccessibilityService() {
         })
         timingBox.addView(everyRow)
         timingBox.addView(holdRow)
+
+        delayBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(0, dp(4f), 0, 0)
+        }
+        delayLabel = TextView(this).apply {
+            setTextColor(COLOR_PLAY)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            typeface = Ui.font(this@RecorderService, 2)
+            gravity = Gravity.CENTER
+            maxLines = 1
+        }
+        delayBox.addView(timingRow("Delay", { delayLabel }, {
+            selectedTarget?.let { it.delayMs = (it.delayMs - 50L).coerceAtLeast(0L); refreshMulti() }
+        }, {
+            selectedTarget?.let { it.delayMs = (it.delayMs + 50L).coerceAtMost(10_000L); refreshMulti() }
+        }))
+        timingBox.addView(delayBox)
         row.addView(iconButton(Icon.SETTINGS, "Timing") {
             timingBox.visibility = if (timingBox.visibility == View.VISIBLE) View.GONE else View.VISIBLE
             refreshTiming()
@@ -811,9 +940,14 @@ class RecorderService : AccessibilityService() {
                 if (multiTargets.isEmpty()) {
                     toast("Add at least one target")
                 } else {
-                    val points = multiTargets.map { PointF(it.x, it.y) }
+                    val points = multiTargets.map { MultiPoint(it.x, it.y, it.delayMs) }
+                    val id = savedId ?: UUID.randomUUID().toString()
+                    val name = savedName ?: "Setup ${storage.setups().size + 1}"
+                    storage.saveSetup(MultiSetup(id, name, points, everyMs, holdMs, System.currentTimeMillis()))
+                    savedId = id
+                    savedName = name
                     removeMultiPicker(restorePanel = true)
-                    beginMultiTap(points, everyMs, holdMs)
+                    beginMultiTap(points, everyMs, holdMs, name)
                 }
             }
         }
@@ -848,6 +982,7 @@ class RecorderService : AccessibilityService() {
         capsule.addView(timingBox)
         frame.addView(capsule, capLp)
         refreshTiming()
+        initial?.points?.forEach { addTarget(it.x, it.y, it.delayMs) }
         frame.setOnTouchListener { _, e ->
             if (e.actionMasked == MotionEvent.ACTION_UP) addTarget(e.rawX, e.rawY)
             true
@@ -860,7 +995,7 @@ class RecorderService : AccessibilityService() {
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
         ))
-        toast("Tap each target you want to repeat")
+        toast("Tap to add · tap a marker for delay · hold to remove")
     }
 
     private fun removeMultiPicker(restorePanel: Boolean) {
@@ -870,7 +1005,7 @@ class RecorderService : AccessibilityService() {
         if (restorePanel) panel?.visibility = View.VISIBLE
     }
 
-    private fun showMultiGhost(points: List<PointF>) {
+    private fun showMultiGhost(points: List<MultiPoint>) {
         removeMultiGhost()
         if (points.isEmpty()) return
         val frame = FrameLayout(this)
@@ -909,7 +1044,7 @@ class RecorderService : AccessibilityService() {
         multiGhost = null
     }
 
-    private fun beginMultiTap(points: List<PointF>, every: Long, hold: Long) {
+    private fun beginMultiTap(points: List<MultiPoint>, every: Long, hold: Long, name: String? = null) {
         val rec = Recording(UUID.randomUUID().toString(), "", System.currentTimeMillis(), mutableListOf())
         val label = FlowStep(0, FlowStep.LABEL, ref = FlowStep.newId(), name = "Repeat")
         rec.flows.add(label)
@@ -918,14 +1053,14 @@ class RecorderService : AccessibilityService() {
             rec.gestures.add(RecGesture(at, listOf(
                 Stroke(listOf(TouchPoint(point.x, point.y, 0), TouchPoint(point.x, point.y, hold))),
             )))
-            at += every
+            at += every + point.delayMs
         }
         rec.flows.add(FlowStep(at, FlowStep.GOTO, ref = label.ref))
-        rec.name = "Multi tap · ${points.size} targets · every ${FlowUi.sec(every)}"
+        rec.name = name ?: "Multi tap · ${points.size} targets · every ${FlowUi.sec(every)}"
         storage.save(rec)
         playFrom(rec.id, -1, 1500)
         showMultiGhost(points)
-        toast("Multi tap starts in 1.5 s. Volume Down stops.")
+        toast("${rec.name} starts in 1.5 s. Volume Down stops.")
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -984,6 +1119,7 @@ class RecorderService : AccessibilityService() {
         ))
         box.addView(View(this).apply { setBackgroundColor(0x33FFFFFF) },
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1f)).apply { setMargins(dp(8f), dp(4f), dp(8f), dp(4f)) })
+        box.addView(row("Saved setups", COLOR_PLAY, true) { closeMenu(); showSetupList() })
         box.addView(row("Multi tap here", COLOR_PLAY, true) { closeMenu(); startMultiTap() })
         box.addView(row("Auto tap here", COLOR_PLAY, true) { closeMenu(); startQuickTap() })
         box.addView(row("Open NNA Clicker", 0xFFF1F4F2.toInt(), false) { closeMenu(); openApp() })

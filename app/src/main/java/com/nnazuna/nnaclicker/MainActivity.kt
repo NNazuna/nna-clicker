@@ -409,11 +409,17 @@ class MainActivity : Activity() {
     private fun newAutoClicker() {
         TBuilder(this, Ui.dialogTheme(p))
             .setTitle("Auto clicker")
-            .setItems(arrayOf("Tap one spot", "Swipe", "Multi targets")) { _, which ->
+            .setItems(arrayOf("Tap one spot", "Swipe", "Multi targets", "Saved setups")) { _, which ->
                 if (which == 2) {
                     val svc = RecorderService.instance
                     if (svc == null) toast("Turn on accessibility service first")
                     else svc.startMultiTarget()
+                    return@setItems
+                }
+                if (which == 3) {
+                    val svc = RecorderService.instance
+                    if (svc == null) toast("Turn on accessibility service first")
+                    else svc.showSavedSetups()
                     return@setItems
                 }
                 startActivity(

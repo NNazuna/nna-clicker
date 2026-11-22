@@ -6,7 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
-- Multi-target auto tap: place numbered targets over the app, drag them to move, then tap Start. Targets repeat in order until stopped; tap a target to remove it, or use Undo and Clear.
+- Multi-target auto tap: place numbered targets over the app, drag them to move, then tap Start. Tap a target to set its delay, hold it to remove; use Undo and Clear.
+- Saved setups: every multi-target run is saved automatically and can be loaded again from the panel menu or Tools → AUTO TAP → Saved setups.
 - Multi-target timing: adjust the pause between targets and touch hold in the picker; numbered markers stay visible while playback runs.
 - Quick auto tap: open the floating panel, tap **Auto tap here**, then tap the target once. It repeats after 1.5 seconds; Volume Down stops it.
 - Unit tests for the playback program, timeline, evdev coordinate mapping, and model constraints.

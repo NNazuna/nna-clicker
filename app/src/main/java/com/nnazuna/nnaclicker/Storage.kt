@@ -11,6 +11,7 @@ class Storage(context: Context) {
     }
 
     private val dir = File(context.filesDir, "recordings").apply { mkdirs() }
+    private val multiDir = File(context.filesDir, "multi").apply { mkdirs() }
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     private var listCache: List<Recording>? = null
@@ -42,6 +43,21 @@ class Storage(context: Context) {
     fun save(r: Recording) {
         File(dir, "${r.id}.json").writeText(r.toJson().toString())
         listCache = null
+    }
+
+    // ---------- saved multi-target setups ----------
+
+    fun setups(): List<MultiSetup> =
+        (multiDir.listFiles { f -> f.name.endsWith(".json") } ?: emptyArray())
+            .mapNotNull { f -> runCatching { MultiSetup.fromJson(JSONObject(f.readText())) }.getOrNull() }
+            .sortedBy { it.created }
+
+    fun saveSetup(s: MultiSetup) {
+        File(multiDir, "${s.id}.json").writeText(s.toJson().toString())
+    }
+
+    fun deleteSetup(id: String) {
+        File(multiDir, "$id.json").delete()
     }
 
     /** The setup guide was finished or dismissed. */
