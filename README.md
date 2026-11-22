@@ -166,6 +166,7 @@ If NNA Clicker saves you time, you can support its development:
 
 - [Ko-fi](https://ko-fi.com/nnazuna)
 - [Saweria](https://saweria.co/nnazuna)
+- [Trakteer](https://trakteer.id/dedhanof_afp)
 
 Bug reports, feature requests, and pull requests are always welcome.
 

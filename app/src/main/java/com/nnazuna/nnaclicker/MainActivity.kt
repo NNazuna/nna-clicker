@@ -283,6 +283,28 @@ class MainActivity : Activity() {
         }
         root.addView(app)
 
+        // ---- Support ----
+        val support = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(k.dp(4f), k.dp(16f), k.dp(4f), k.dp(4f))
+        }
+        support.addView(k.text("Support", 12f, 0, p.muted).apply {
+            setPadding(0, 0, k.dp(6f), 0)
+        })
+        fun donate(label: String, url: String, last: Boolean = false) {
+            support.addView(k.textButton(label, p.play) {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            })
+            if (!last) support.addView(k.text("·", 12f, 0, p.muted).apply {
+                setPadding(k.dp(2f), 0, k.dp(2f), 0)
+            })
+        }
+        donate("Ko-fi", "https://ko-fi.com/nnazuna")
+        donate("Saweria", "https://saweria.co/nnazuna")
+        donate("Trakteer", "https://trakteer.id/dedhanof_afp", last = true)
+        root.addView(support)
+
 
         // First launch: walk through the switches before anything else (the tutorial follows, see onResume).
         if (savedInstanceState == null && !storage.setupSeen && RecorderService.instance == null) {

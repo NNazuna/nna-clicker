@@ -3,7 +3,7 @@
 All notable changes to NNA Clicker are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.3.0] - 2026-11-22
 
 ### Added
 - Multi-target auto tap: place numbered targets over the app, drag them to move, then tap Start. Tap a target to set its delay, hold it to remove; use Undo and Clear.
@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Original N+play app icon with adaptive and monochrome layers, replacing the previous character artwork.
 
 ### Changed
+- Support links for Ko-fi, Saweria, and Trakteer in the app, README, and repository funding card.
 - Android cloud backup is disabled. Recordings and screenshots stay on the device; use Export to move a recording.
 - English-only interface. The language picker and Indonesian translation table were removed, reducing startup work and APK size.
 - Main and Setup screens share a flat instrument-panel style with condensed headings. Main keeps a compact tool dock for Auto tap, Screens, Log, and Setup.
