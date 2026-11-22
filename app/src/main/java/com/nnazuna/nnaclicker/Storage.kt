@@ -13,10 +13,24 @@ class Storage(context: Context) {
     private val dir = File(context.filesDir, "recordings").apply { mkdirs() }
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
-    fun list(): List<Recording> =
-        (dir.listFiles { f -> f.name.endsWith(".json") } ?: emptyArray())
+    private var listCache: List<Recording>? = null
+    private var listCacheStamp = -1L
+    private var listCacheCount = -1
+
+    fun list(): List<Recording> {
+        val files = dir.listFiles { f -> f.name.endsWith(".json") } ?: emptyArray()
+        val stamp = files.maxOfOrNull { it.lastModified() } ?: 0L
+        listCache?.let { cached ->
+            if (stamp == listCacheStamp && files.size == listCacheCount) return cached
+        }
+        val recs = files
             .mapNotNull { f -> runCatching { Recording.fromJson(JSONObject(f.readText())) }.getOrNull() }
             .sortedByDescending { it.created }
+        listCache = recs
+        listCacheStamp = stamp
+        listCacheCount = files.size
+        return recs
+    }
 
     fun get(id: String?): Recording? {
         if (id == null) return null
@@ -27,6 +41,7 @@ class Storage(context: Context) {
 
     fun save(r: Recording) {
         File(dir, "${r.id}.json").writeText(r.toJson().toString())
+        listCache = null
     }
 
     /** The setup guide was finished or dismissed. */
@@ -67,6 +82,7 @@ class Storage(context: Context) {
 
     fun delete(id: String) {
         File(dir, "$id.json").delete()
+        listCache = null
         if (selectedId == id) selectedId = null
     }
 
@@ -92,11 +108,6 @@ class Storage(context: Context) {
     var tutorialSeen: Boolean
         get() = prefs.getBoolean("tutorial_seen", false)
         set(v) = prefs.edit().putBoolean("tutorial_seen", v).apply()
-
-    /** "auto" (follow the phone), "en" or "id". */
-    var language: String
-        get() = prefs.getString("language", "auto") ?: "auto"
-        set(v) = prefs.edit().putString("language", v).apply()
 
     // ---------- run log: screenshots saved when an image step stops playback ----------
 

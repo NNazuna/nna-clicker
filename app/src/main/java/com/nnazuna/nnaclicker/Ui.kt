@@ -170,7 +170,7 @@ class Kit(private val a: Activity) {
     /** Kelompok baris dengan latar permukaan. */
     fun group(): LinearLayout = LinearLayout(a).apply {
         orientation = LinearLayout.VERTICAL
-        background = rounded(p.surface, 14f)
+        background = rounded(p.surface, 6f, p.line)
         clipToOutline = true
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -184,29 +184,36 @@ class Kit(private val a: Activity) {
         }
     }
 
-    /** Judul bagian, dengan aksi teks opsional di kanan. */
+    /** Judul bagian, dengan garis tipis dan aksi teks opsional di kanan. */
     fun sectionHeader(title: String, action: String? = null, onAction: (() -> Unit)? = null): View {
         val row = LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4f), dp(28f), 0, dp(2f))
+            setPadding(dp(4f), dp(28f), dp(4f), dp(6f))
         }
-        row.addView(text(title, 17f, 2), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(text(title, 17f, 2))
+        row.addView(View(a).apply { setBackgroundColor(p.line) }, LinearLayout.LayoutParams(0, dp(1f)).apply {
+            weight = 1f
+            leftMargin = dp(12f)
+            rightMargin = dp(12f)
+            gravity = Gravity.CENTER_VERTICAL
+        })
         if (action != null) row.addView(textButton(action, p.play) { onAction?.invoke() })
         return row
     }
 
     fun textButton(label: String, color: Int, onClick: () -> Unit) = text(label, 15f, 2, color).apply {
         setPadding(dp(12f), dp(8f), dp(4f), dp(8f))
-        background = ripple(null, dp(8f).toFloat())
+        background = ripple(null, dp(4f).toFloat())
         setOnClickListener { onClick() }
     }
 
-    /** Tombol utama berbentuk pil. */
+    /** Tombol utama: tegas, bukan pil dekoratif. */
     fun pillButton(label: String, color: Int, onClick: () -> Unit) = text(label, 16f, 2, p.onAccent).apply {
         gravity = Gravity.CENTER
+        minHeight = dp(54f)
         setPadding(dp(20f), dp(15f), dp(20f), dp(15f))
-        background = ripple(rounded(color, 26f), dp(26f).toFloat())
+        background = ripple(rounded(color, 8f), dp(8f).toFloat())
         setOnClickListener { onClick() }
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -270,7 +277,7 @@ class Kit(private val a: Activity) {
     }
 }
 
-enum class Icon { RECORD, STOP, PLAY, LIST, CLOSE, GRIP, MORE, BACK, CAMERA, IMAGE, TRASH, FLAG, JUMP, CLOCK, TAP, SWIPE, PAUSE }
+enum class Icon { RECORD, STOP, PLAY, LIST, CLOSE, GRIP, MORE, BACK, CAMERA, IMAGE, TRASH, FLAG, JUMP, CLOCK, TAP, SWIPE, PAUSE, SETTINGS }
 
 /** Ikon digambar langsung di canvas supaya tajam & konsisten di semua ROM (tanpa emoji). */
 class IconDrawable(private val kind: Icon, color: Int, private val size: Int) : Drawable() {
@@ -399,6 +406,13 @@ class IconDrawable(private val kind: Icon, color: Int, private val size: Int) : 
                     lineTo(cx + s * 0.10f, cy + s * 0.26f)
                 }
                 c.drawPath(path, stroke)
+            }
+            Icon.SETTINGS -> {
+                val x = s * 0.30f
+                c.drawLine(cx - x, cy - s * 0.16f, cx + x, cy - s * 0.16f, stroke)
+                c.drawLine(cx - x, cy + s * 0.16f, cx + x, cy + s * 0.16f, stroke)
+                c.drawCircle(cx - s * 0.10f, cy - s * 0.16f, s * 0.075f, fill)
+                c.drawCircle(cx + s * 0.10f, cy + s * 0.16f, s * 0.075f, fill)
             }
         }
     }

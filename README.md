@@ -74,7 +74,7 @@ The app falls back to the Standard engine automatically if Shizuku is unavailabl
 - Run log: the screen is saved when an image step stops playback, with one-tap fixes
 
 **Interface**
-- English and Bahasa Indonesia
+- English only
 - Short tutorial on first launch
 - Light and dark themes that follow the system setting
 

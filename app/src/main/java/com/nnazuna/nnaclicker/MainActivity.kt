@@ -63,11 +63,11 @@ class MainActivity : Activity() {
     private lateinit var scopeSub: TextView
     private lateinit var scopeSwitch: Switch
     private var suppressScope = false
-    private lateinit var langValue: TextView
 
     private var exportId: String? = null
     private var dimDivider: View? = null
     private var suppressSwitch = false
+    private var listKey: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,7 +88,6 @@ class MainActivity : Activity() {
             setPadding(k.dp(4f), 0, k.dp(4f), 0)
         }
         titleRow.addView(k.text("NNA Clicker", 32f, 2), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        titleRow.addView(k.textButton("Setup", p.play) { startActivity(Intent(this, SetupActivity::class.java)) })
         titleRow.addView(k.text("v${BuildConfig.VERSION_NAME}", 14f, 1, p.muted).apply { setPadding(k.dp(4f), 0, 0, k.dp(5f)) })
         root.addView(titleRow)
         root.addView(View(this), LinearLayout.LayoutParams(1, k.dp(10f)))
@@ -140,6 +139,7 @@ class MainActivity : Activity() {
             refresh()
         }
         root.addView(panelButton)
+        root.addView(quickActions())
 
         // ---- Rekaman ----
         root.addView(k.sectionHeader("Recordings", "Import") {
@@ -150,20 +150,6 @@ class MainActivity : Activity() {
         })
         listGroup = k.group()
         root.addView(listGroup)
-        val links = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        links.addView(k.textButton("Auto clicker", p.play) { newAutoClicker() }.apply {
-            setPadding(k.dp(4f), k.dp(10f), k.dp(14f), k.dp(4f))
-        })
-        links.addView(k.textButton("Screenshots", p.play) {
-            SnapPicker.show(this, k, storage, "Screenshots", null)
-        }.apply { setPadding(k.dp(4f), k.dp(10f), k.dp(14f), k.dp(4f)) })
-        links.addView(k.textButton("Run log", p.play) {
-            startActivity(Intent(this, RunLogActivity::class.java))
-        }.apply { setPadding(k.dp(4f), k.dp(10f), k.dp(4f), k.dp(4f)) })
-        root.addView(android.widget.HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            addView(links)
-        })
 
         // ---- Pemutaran ----
         root.addView(k.sectionHeader("Playback"))
@@ -223,7 +209,7 @@ class MainActivity : Activity() {
         speedRow.addView(k.text("Speed", 16f, 1))
         speedBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            background = k.rounded(p.bg, 10f)
+            background = k.rounded(p.bg, 4f)
             setPadding(k.dp(3f), k.dp(3f), k.dp(3f), k.dp(3f))
         }
         speedRow.addView(speedBox, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
@@ -280,7 +266,6 @@ class MainActivity : Activity() {
         // ---- App ----
         root.addView(k.sectionHeader("App"))
         val app = k.group()
-        langValue = addRow(app, "Language") { pickLanguage() }
         addRow(app, "Tutorial", "How to record, play, and edit", last = true) {
             startActivity(Intent(this, TutorialActivity::class.java))
         }
@@ -341,6 +326,65 @@ class MainActivity : Activity() {
         return value
     }
 
+    /** Four primary actions, reachable with one thumb instead of a scrolling row. */
+    private fun quickActions(): View {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = k.rounded(p.surface, 6f, p.line)
+            clipToOutline = true
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = k.dp(12f) }
+        }
+
+        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        top.addView(quickAction("Auto clicker", Icon.TAP) { newAutoClicker() }, weighted())
+        top.addView(quickRule())
+        top.addView(quickAction("Screenshots", Icon.IMAGE) {
+            SnapPicker.show(this, k, storage, "Screenshots", null)
+        }, weighted())
+        box.addView(top)
+        box.addView(quickRule(horizontal = true))
+
+        val bottom = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        bottom.addView(quickAction("Run log", Icon.CLOCK) {
+            startActivity(Intent(this, RunLogActivity::class.java))
+        }, weighted())
+        bottom.addView(quickRule())
+        bottom.addView(quickAction("Setup", Icon.SETTINGS) {
+            startActivity(Intent(this, SetupActivity::class.java))
+        }, weighted())
+        box.addView(bottom)
+        return box
+    }
+
+    private fun weighted() = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+
+    private fun quickAction(label: String, icon: Icon, onClick: () -> Unit): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            minimumHeight = k.dp(52f)
+            setPadding(k.dp(10f), 0, k.dp(10f), 0)
+            background = k.ripple(null, k.dp(4f).toFloat())
+            setOnClickListener { onClick() }
+            addView(k.icon(icon, p.play, 18f))
+            addView(k.text(label, 14f, 2).apply {
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(k.dp(8f), 0, 0, 0)
+            })
+        }
+
+    private fun quickRule(horizontal: Boolean = false): View = View(this).apply {
+        setBackgroundColor(p.line)
+        layoutParams = if (horizontal) {
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1)
+        } else {
+            LinearLayout.LayoutParams(1, k.dp(52f))
+        }
+    }
+
     /** Simple auto clicker: one tap or swipe repeated until stopped. */
     private fun newAutoClicker() {
         TBuilder(this, Ui.dialogTheme(p))
@@ -353,26 +397,6 @@ class MainActivity : Activity() {
                 )
             }
             .show()
-    }
-
-    private fun pickLanguage() {
-        val codes = arrayOf("auto", "en", "id")
-        val names = arrayOf(L.t("Same as phone"), "English", "Bahasa Indonesia")
-        TBuilder(this, Ui.dialogTheme(p))
-            .setTitle(L.t("Language"))
-            .setSingleChoiceItems(names, codes.indexOf(storage.language).coerceAtLeast(0)) { d, which ->
-                d.dismiss()
-                storage.language = codes[which]
-                L.load(this)
-                recreate()
-            }
-            .show()
-    }
-
-    private fun langName(): String = when (storage.language) {
-        "en" -> "English"
-        "id" -> "Bahasa Indonesia"
-        else -> L.t("Same as phone")
     }
 
     private fun trim(f: Float): String = if (f == f.toLong().toFloat()) f.toLong().toString() else f.toString()
@@ -477,7 +501,6 @@ class MainActivity : Activity() {
 
     private fun refreshSettings() {
         loadCfg()
-        langValue.text = langName()
         loopsValue.text = if (cfg.loops == 0) "∞" else cfg.loops.toString()
         intervalValue.text = Ui.fmtSec(cfg.intervalMs)
         startValue.text = Ui.fmtSec(cfg.startDelayMs)
@@ -504,8 +527,17 @@ class MainActivity : Activity() {
     }
 
     private fun renderList() {
-        listGroup.removeAllViews()
         val recs = storage.list()
+        val key = buildString {
+            append(storage.selectedId).append('|')
+            recs.forEach {
+                append(it.id).append(it.name).append(it.steps().size).append(it.length)
+                append(it.images.size).append(it.flows.size).append(it.settings != null).append('|')
+            }
+        }
+        if (key == listKey && listGroup.childCount > 0) return
+        listKey = key
+        listGroup.removeAllViews()
         if (recs.isEmpty()) {
             listGroup.addView(k.text("No recordings yet", 16f, 1).apply {
                 setPadding(k.dp(16f), k.dp(18f), k.dp(16f), 0)
