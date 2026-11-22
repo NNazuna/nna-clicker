@@ -30,11 +30,9 @@ jobs:
           java-version: "17"
 
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.7"
 
       - name: Run unit tests
-        run: gradle testDebugUnitTest --no-daemon --stacktrace
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
 
       - name: Build APK
         env:
@@ -43,13 +41,13 @@ jobs:
         # Signed release build when the signing secrets are available; forks fall back to debug.
         run: |
           if [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
-            gradle assembleRelease --no-daemon --stacktrace
+            ./gradlew assembleRelease --no-daemon --stacktrace
             echo "APK=app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_ENV"
           else
             if [ "${{ github.event.inputs.publish_release }}" = "true" ] || [ "${{ github.event.inputs.prerelease }}" = "true" ]; then
               echo "::error::Signing secrets are missing; refusing to publish a debug build."; exit 1
             fi
-            gradle assembleDebug --no-daemon --stacktrace
+            ./gradlew assembleDebug --no-daemon --stacktrace
             echo "APK=app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_ENV"
           fi
 

@@ -1,0 +1,6 @@
+- Multi-target auto tap with per-target delay and saved setups (rename, delete)
+- Quick auto tap: tap a spot once and it repeats
+- Running pill with a Stop button while auto tap plays
+- Auto tap no longer fills the recording list
+- New app icon; cloud backup disabled; English-only interface
+- Settings from imports are clamped to safe ranges
