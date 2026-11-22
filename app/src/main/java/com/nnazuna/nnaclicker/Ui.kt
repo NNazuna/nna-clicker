@@ -168,10 +168,10 @@ class Kit(private val a: Activity) {
         if (strokeColor != null) setStroke(dp(1f), strokeColor)
     }
 
-    /** Kelompok baris dengan latar permukaan. */
+    /** Kelompok baris dengan panel datar, bukan kartu bulat. */
     fun group(): LinearLayout = LinearLayout(a).apply {
         orientation = LinearLayout.VERTICAL
-        background = rounded(p.surface, 2f, p.line)
+        background = rounded(p.surface, 0f, p.line)
         clipToOutline = true
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -213,7 +213,7 @@ class Kit(private val a: Activity) {
         gravity = Gravity.CENTER
         minHeight = dp(54f)
         setPadding(dp(20f), dp(15f), dp(20f), dp(15f))
-        background = ripple(rounded(color, 2f), dp(2f).toFloat())
+        background = ripple(rounded(color, 0f), dp(0f).toFloat())
         setOnClickListener { onClick() }
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,

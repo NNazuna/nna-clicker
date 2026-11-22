@@ -130,7 +130,7 @@ class MainActivity : Activity() {
         status.addView(shzDiag)
         root.addView(status)
 
-        panelButton = k.pillButton("Show panel", p.play) {
+        panelButton = k.pillButton("Show panel", p.ink) {
             val s = RecorderService.instance ?: run {
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); return@pillButton
             }
@@ -346,7 +346,7 @@ class MainActivity : Activity() {
             SnapPicker.show(this, k, storage, "Screenshots", null)
         }, weighted())
         row.addView(quickRule())
-        row.addView(quickAction("Run log", Icon.CLOCK) {
+        row.addView(quickAction("Log", Icon.CLOCK) {
             startActivity(Intent(this, RunLogActivity::class.java))
         }, weighted())
         row.addView(quickRule())
@@ -372,10 +372,11 @@ class MainActivity : Activity() {
             addView(k.icon(icon, p.play, 21f).apply {
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             })
-            addView(k.text(label, 11f, 2, p.ink).apply {
+            addView(k.text(label.uppercase(java.util.Locale.US), 10f, 2, p.muted).apply {
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 gravity = Gravity.CENTER
+                letterSpacing = 0.08f
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 setPadding(0, k.dp(6f), 0, 0)
             })
@@ -443,7 +444,7 @@ class MainActivity : Activity() {
             svc.isPanelShown -> "Hide panel"
             else -> "Show panel"
         })
-        panelButton.background = k.ripple(k.rounded(if (svc?.isPanelShown == true) p.muted else p.play, 2f), k.dp(2f).toFloat())
+        panelButton.background = k.ripple(k.rounded(if (svc?.isPanelShown == true) p.muted else p.ink, 0f), 0f)
 
         // Shizuku
         suppressSwitch = true
