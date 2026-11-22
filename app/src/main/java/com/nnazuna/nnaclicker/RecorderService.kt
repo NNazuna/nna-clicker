@@ -7,6 +7,7 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.graphics.Point
+import android.graphics.PointF
 import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
@@ -75,6 +76,11 @@ class RecorderService : AccessibilityService() {
     private var menuView: View? = null
     /** Full-screen one-tap picker for the quick auto tap flow. */
     private var picker: View? = null
+    /** Full-screen multi-target picker. */
+    private var multiPicker: FrameLayout? = null
+    private val multiTargets = mutableListOf<MultiTarget>()
+
+    private class MultiTarget(val x: Float, val y: Float, val view: View)
     /** Lapisan gelap saat memutar (tidak menangkap sentuhan) + menjaga layar tetap menyala. */
     private var dimView: View? = null
     private var playStartedAt = 0L
@@ -148,6 +154,10 @@ class RecorderService : AccessibilityService() {
 
     /** Volume Bawah = berhenti merekam / memutar, tanpa perlu menyentuh layar. */
     override fun onKeyEvent(event: KeyEvent): Boolean {
+        if (multiPicker != null && event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            if (event.action == KeyEvent.ACTION_DOWN) removeMultiPicker(restorePanel = true)
+            return true
+        }
         if (picker != null && event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
             if (event.action == KeyEvent.ACTION_DOWN) removePicker(restorePanel = true)
             return true
@@ -173,6 +183,7 @@ class RecorderService : AccessibilityService() {
         if (instance == null) return
         stopAll()
         removePicker(restorePanel = false)
+        removeMultiPicker(restorePanel = false)
         removeCapture()
         hidePanel()
         instance = null
@@ -220,6 +231,9 @@ class RecorderService : AccessibilityService() {
     // ---------- panel mengambang ----------
 
     val isPanelShown: Boolean get() = panel != null
+
+    /** Entry point from the main screen: place numbered targets over any app. */
+    fun startMultiTarget() = startMultiTap()
 
     @SuppressLint("ClickableViewAccessibility")
     fun showPanel() {
@@ -552,6 +566,219 @@ class RecorderService : AccessibilityService() {
         toast("Auto tap starts in 1.5 s. Volume Down stops.")
     }
 
+    // ---------- multi-target auto tap ----------
+
+    /** Place numbered targets, then tap them in order, forever. */
+    private fun startMultiTap() {
+        if (state != State.IDLE) {
+            toast("Stop recording or playback first")
+            return
+        }
+        if (multiPicker != null) return
+        closeMenu()
+        panel?.visibility = View.INVISIBLE
+        multiTargets.clear()
+
+        val frame = FrameLayout(this)
+        val size = screenSize()
+        lateinit var countLabel: TextView
+        lateinit var startButton: TextView
+
+        fun refreshMulti() {
+            val n = multiTargets.size
+            countLabel.text = if (n == 0) {
+                L.t("Tap a spot to add a target")
+            } else {
+                L.t("{} targets · tap one to remove", n)
+            }
+            startButton.isEnabled = n > 0
+            startButton.alpha = if (n > 0) 1f else 0.35f
+            multiTargets.forEachIndexed { i, t -> (t.view as TextView).text = (i + 1).toString() }
+        }
+
+        fun addTarget(x: Float, y: Float) {
+            val px = x.coerceIn(dp(20f).toFloat(), (size.x - dp(20f)).toFloat())
+            val py = y.coerceIn(dp(20f).toFloat(), (size.y - dp(20f)).toFloat())
+            val marker = TextView(this).apply {
+                text = (multiTargets.size + 1).toString()
+                gravity = Gravity.CENTER
+                setTextColor(0xFFFFFFFF.toInt())
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                typeface = Ui.font(this@RecorderService, 2)
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(COLOR_PLAY)
+                    setStroke(dp(2f), 0xFFFFFFFF.toInt())
+                }
+                elevation = dp(4f).toFloat()
+            }
+            val target = MultiTarget(px, py, marker)
+            marker.setOnClickListener {
+                multiTargets.remove(target)
+                frame.removeView(marker)
+                refreshMulti()
+            }
+            multiTargets.add(target)
+            frame.addView(marker, FrameLayout.LayoutParams(dp(38f), dp(38f)).apply {
+                leftMargin = (px - dp(19f)).toInt()
+                topMargin = (py - dp(19f)).toInt()
+            })
+            refreshMulti()
+        }
+
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14f), dp(12f), dp(10f), dp(12f))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(4f).toFloat()
+                setColor(0xF21C2220.toInt())
+            }
+            isClickable = true
+        }
+        val topRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        topRow.addView(TextView(this).apply {
+            text = L.t("Tap targets in order")
+            setTextColor(0xFFF1F4F2.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            typeface = Ui.font(this@RecorderService, 2)
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        topRow.addView(TextView(this).apply {
+            text = L.t("Cancel")
+            setTextColor(COLOR_PLAY)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            typeface = Ui.font(this@RecorderService, 2)
+            setPadding(dp(14f), dp(6f), dp(8f), dp(6f))
+            setOnClickListener { removeMultiPicker(restorePanel = true) }
+        })
+        top.addView(topRow)
+        countLabel = TextView(this).apply {
+            setTextColor(0x99FFFFFF.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            typeface = Ui.font(this@RecorderService, 0)
+            setPadding(0, dp(3f), 0, 0)
+        }
+        top.addView(countLabel)
+
+        val bottom = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8f), dp(8f), dp(8f), dp(8f))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(4f).toFloat()
+                setColor(0xF21C2220.toInt())
+            }
+            isClickable = true
+        }
+        fun action(label: String, onClick: () -> Unit): TextView = TextView(this).apply {
+            text = L.t(label)
+            gravity = Gravity.CENTER
+            minHeight = dp(44f)
+            setTextColor(0xFFF1F4F2.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            typeface = Ui.font(this@RecorderService, 2)
+            background = RippleDrawable(
+                android.content.res.ColorStateList.valueOf(0x33FFFFFF), null,
+                GradientDrawable().apply { cornerRadius = dp(4f).toFloat(); setColor(0xFFFFFFFF.toInt()) },
+            )
+            setOnClickListener { onClick() }
+        }
+        bottom.addView(action("Undo") {
+            if (multiTargets.isNotEmpty()) {
+                val t = multiTargets.removeAt(multiTargets.lastIndex)
+                frame.removeView(t.view)
+                refreshMulti()
+            }
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        bottom.addView(action("Clear") {
+            multiTargets.forEach { frame.removeView(it.view) }
+            multiTargets.clear()
+            refreshMulti()
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        startButton = TextView(this).apply {
+            text = L.t("Start")
+            gravity = Gravity.CENTER
+            minHeight = dp(44f)
+            setTextColor(0xFF0F1312.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            typeface = Ui.font(this@RecorderService, 2)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(4f).toFloat()
+                setColor(COLOR_PLAY)
+            }
+            setOnClickListener {
+                if (multiTargets.isEmpty()) {
+                    toast("Add at least one target")
+                } else {
+                    val points = multiTargets.map { PointF(it.x, it.y) }
+                    removeMultiPicker(restorePanel = true)
+                    beginMultiTap(points)
+                }
+            }
+        }
+        bottom.addView(startButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.6f).apply {
+            leftMargin = dp(4f)
+        })
+
+        frame.addView(top, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            gravity = Gravity.TOP
+            topMargin = dp(72f)
+            leftMargin = dp(16f)
+            rightMargin = dp(16f)
+        })
+        frame.addView(bottom, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            gravity = Gravity.BOTTOM
+            bottomMargin = dp(28f)
+            leftMargin = dp(16f)
+            rightMargin = dp(16f)
+        })
+        frame.setOnTouchListener { _, e ->
+            if (e.actionMasked == MotionEvent.ACTION_UP) addTarget(e.rawX, e.rawY)
+            true
+        }
+        refreshMulti()
+        multiPicker = frame
+        wm.addView(frame, overlayParams(
+            size.x, size.y,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+        ))
+        toast("Tap each target you want to repeat")
+    }
+
+    private fun removeMultiPicker(restorePanel: Boolean) {
+        multiPicker?.let { runCatching { wm.removeView(it) } }
+        multiPicker = null
+        multiTargets.clear()
+        if (restorePanel) panel?.visibility = View.VISIBLE
+    }
+
+    private fun beginMultiTap(points: List<PointF>) {
+        val every = storage.globalSettings().intervalMs.coerceIn(100L, 3_600_000L)
+        val rec = Recording(UUID.randomUUID().toString(), "", System.currentTimeMillis(), mutableListOf())
+        val label = FlowStep(0, FlowStep.LABEL, ref = FlowStep.newId(), name = "Repeat")
+        rec.flows.add(label)
+        var at = 1L
+        for (point in points) {
+            rec.gestures.add(RecGesture(at, listOf(
+                Stroke(listOf(TouchPoint(point.x, point.y, 0), TouchPoint(point.x, point.y, 60))),
+            )))
+            at += every
+        }
+        rec.flows.add(FlowStep(at, FlowStep.GOTO, ref = label.ref))
+        rec.name = "Multi tap · ${points.size} targets · every ${FlowUi.sec(every)}"
+        storage.save(rec)
+        playFrom(rec.id, -1, 1500)
+        toast("Multi tap starts in 1.5 s. Volume Down stops.")
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     private fun openMenu() {
         val anchor = panel ?: return
@@ -608,6 +835,7 @@ class RecorderService : AccessibilityService() {
         ))
         box.addView(View(this).apply { setBackgroundColor(0x33FFFFFF) },
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1f)).apply { setMargins(dp(8f), dp(4f), dp(8f), dp(4f)) })
+        box.addView(row("Multi tap here", COLOR_PLAY, true) { closeMenu(); startMultiTap() })
         box.addView(row("Auto tap here", COLOR_PLAY, true) { closeMenu(); startQuickTap() })
         box.addView(row("Open NNA Clicker", 0xFFF1F4F2.toInt(), false) { closeMenu(); openApp() })
         box.addView(row("Shrink panel", 0xFFF1F4F2.toInt(), false) { setMinimized(true) })
