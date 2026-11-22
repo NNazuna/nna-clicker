@@ -97,14 +97,16 @@ class MainActivity : Activity() {
         titleRow.addView(View(this).apply { background = k.rounded(p.play, 0f) },
             LinearLayout.LayoutParams(k.dp(10f), k.dp(10f)).apply { rightMargin = k.dp(12f) })
         titleRow.addView(k.text("NNA Clicker", 34f, 3, headerInk), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        titleRow.addView(k.text("v${BuildConfig.VERSION_NAME}", 13f, 1, p.play))
+        titleRow.addView(k.text("v${BuildConfig.VERSION_NAME}", 13f, 1, headerInk).apply { alpha = 0.7f })
         header.addView(titleRow)
 
         // ---- Kesiapan ----
         val status = k.group()
         status.addView(statusRow("Accessibility service").also {
             a11yDot = it.dot; a11ySub = it.sub; a11yAction = it.action
-            a11yAction.text = L.t("Open")
+            a11yAction.text = "›"
+            a11yAction.textSize = 22f
+            a11yAction.contentDescription = "Open accessibility settings"
             a11yAction.setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         }.view)
         status.addView(k.divider(40f))
@@ -350,21 +352,18 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = k.dp(14f) }
+            )
         }
-        wrap.addView(quickRule(horizontal = true))
+        wrap.addView(k.sectionHeader("Tools"))
 
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         row.addView(quickAction("Auto tap", Icon.TAP) { newAutoClicker() }, weighted())
-        row.addView(quickRule())
         row.addView(quickAction("Screens", Icon.IMAGE) {
             SnapPicker.show(this, k, storage, "Screenshots", null)
         }, weighted())
-        row.addView(quickRule())
         row.addView(quickAction("Log", Icon.CLOCK) {
             startActivity(Intent(this, RunLogActivity::class.java))
         }, weighted())
-        row.addView(quickRule())
         row.addView(quickAction("Setup", Icon.SETTINGS) {
             startActivity(Intent(this, SetupActivity::class.java))
         }, weighted())
@@ -452,7 +451,7 @@ class MainActivity : Activity() {
         } else {
             setDot(a11yDot, p.muted)
             a11ySub.text = L.t("Off")
-            a11yAction.visibility = View.GONE
+            a11yAction.visibility = View.VISIBLE
         }
         panelButton.text = L.t(when {
             svc == null -> "Turn on accessibility service"
