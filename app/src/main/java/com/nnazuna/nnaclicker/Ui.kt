@@ -75,12 +75,17 @@ object Ui {
 
     private val fonts = HashMap<String, Typeface>()
 
-    /** 0 = Regular, 1 = Medium, 2 = SemiBold (Barlow). */
+    /** 0 = Regular, 1 = Medium, 2 = SemiBold, 3 = Condensed SemiBold (display). */
     fun font(ctx: Context, weight: Int = 0): Typeface {
-        val name = when (weight) { 1 -> "Medium"; 2 -> "SemiBold"; else -> "Regular" }
+        val name = when (weight) {
+            1 -> "Medium"
+            2 -> "SemiBold"
+            3 -> "BarlowCondensed-SemiBold"
+            else -> "Regular"
+        }
         return fonts.getOrPut(name) {
             try {
-                Typeface.createFromAsset(ctx.assets, "fonts/Barlow-$name.ttf")
+                Typeface.createFromAsset(ctx.assets, "fonts/$name.ttf")
             } catch (e: Exception) {
                 if (weight >= 2) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
             }
@@ -193,7 +198,7 @@ class Kit(private val a: Activity) {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(4f), dp(30f), dp(4f), dp(8f))
         }
-        row.addView(text(title, 19f, 2), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(text(title.uppercase(java.util.Locale.US), 18f, 3), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         if (action != null) row.addView(textButton(action, p.muted) { onAction?.invoke() })
         wrap.addView(row)
         wrap.addView(View(a).apply { setBackgroundColor(p.line) }, LinearLayout.LayoutParams(

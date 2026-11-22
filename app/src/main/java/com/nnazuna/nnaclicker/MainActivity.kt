@@ -85,11 +85,13 @@ class MainActivity : Activity() {
         // ---- Judul ----
         val titleRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.BOTTOM
+            gravity = Gravity.CENTER_VERTICAL
             setPadding(k.dp(4f), 0, k.dp(4f), 0)
         }
-        titleRow.addView(k.text("NNA Clicker", 32f, 2), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        titleRow.addView(k.text("v${BuildConfig.VERSION_NAME}", 14f, 1, p.muted).apply { setPadding(k.dp(4f), 0, 0, k.dp(5f)) })
+        titleRow.addView(View(this).apply { background = k.rounded(p.play, 0f) },
+            LinearLayout.LayoutParams(k.dp(10f), k.dp(10f)).apply { rightMargin = k.dp(12f) })
+        titleRow.addView(k.text("NNA Clicker", 34f, 3), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        titleRow.addView(k.text("v${BuildConfig.VERSION_NAME}", 13f, 1, p.muted))
         root.addView(titleRow)
         root.addView(View(this), LinearLayout.LayoutParams(1, k.dp(10f)))
 
