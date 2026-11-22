@@ -592,8 +592,8 @@ class RecorderService : AccessibilityService() {
         var holdMs = 60L
 
         fun refreshTiming() {
-            everyLabel.text = L.t("Every {}", Ui.fmtSec(everyMs))
-            holdLabel.text = L.t("Hold {} ms", holdMs)
+            everyLabel.text = Ui.fmtSec(everyMs)
+            holdLabel.text = "$holdMs ms"
         }
 
         fun refreshMulti() {
@@ -712,12 +712,14 @@ class RecorderService : AccessibilityService() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             typeface = Ui.font(this@RecorderService, 2)
             gravity = Gravity.CENTER
+            maxLines = 1
         }
         holdLabel = TextView(this).apply {
             setTextColor(COLOR_PLAY)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             typeface = Ui.font(this@RecorderService, 2)
             gravity = Gravity.CENTER
+            maxLines = 1
         }
 
         fun stepButton(label: String, onClick: () -> Unit) = TextView(this).apply {
@@ -747,7 +749,7 @@ class RecorderService : AccessibilityService() {
                 typeface = Ui.font(this@RecorderService, 0)
             }, LinearLayout.LayoutParams(dp(42f), LinearLayout.LayoutParams.WRAP_CONTENT))
             row.addView(stepButton("−", stepDown))
-            row.addView(value(), LinearLayout.LayoutParams(dp(62f), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            row.addView(value(), LinearLayout.LayoutParams(dp(76f), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 gravity = Gravity.CENTER
             })
             row.addView(stepButton("+", stepUp))
