@@ -13,6 +13,12 @@
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
+<p align="center">
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.nnazuna.nnaclicker%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FNNazuna%2Fnna-clicker%22%2C%22author%22%3A%22NNazuna%22%2C%22name%22%3A%22NNA%20Clicker%22%7D"><img src="docs/badge_obtainium.png" alt="Get it on Obtainium" height="48"></a>
+</p>
+
+<p align="center"><sub>Obtainium installs NNA Clicker straight from these GitHub releases and keeps it updated.</sub></p>
+
 ---
 
 ## Overview
