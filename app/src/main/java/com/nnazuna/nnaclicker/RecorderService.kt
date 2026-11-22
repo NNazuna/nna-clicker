@@ -667,7 +667,7 @@ class RecorderService : AccessibilityService() {
             refreshMulti()
         }
 
-        val panelW = minOf(dp(340f), size.x - dp(24f))
+        val panelW = minOf(dp(320f), size.x - dp(24f))
         val capsule = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(6f), dp(6f), dp(6f), dp(6f))
@@ -680,7 +680,7 @@ class RecorderService : AccessibilityService() {
         }
         val capLp = FrameLayout.LayoutParams(panelW, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
             leftMargin = (size.x - panelW) / 2
-            topMargin = dp(28f)
+            topMargin = dp(120f)
         }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
