@@ -500,7 +500,7 @@ class RecorderService : AccessibilityService() {
             setPadding(dp(16f), dp(12f), dp(10f), dp(12f))
             background = GradientDrawable().apply {
                 cornerRadius = dp(4f).toFloat()
-                setColor(0xF21C2220.toInt())
+                setColor(0xFF1C2220.toInt())
             }
         }
         card.addView(TextView(this).apply {
@@ -676,7 +676,7 @@ class RecorderService : AccessibilityService() {
             setPadding(dp(14f), dp(12f), dp(10f), dp(12f))
             background = GradientDrawable().apply {
                 cornerRadius = dp(4f).toFloat()
-                setColor(0xF21C2220.toInt())
+                setColor(0xFF1C2220.toInt())
             }
             isClickable = true
         }
@@ -774,7 +774,7 @@ class RecorderService : AccessibilityService() {
             setPadding(dp(8f), dp(8f), dp(8f), dp(8f))
             background = GradientDrawable().apply {
                 cornerRadius = dp(4f).toFloat()
-                setColor(0xF21C2220.toInt())
+                setColor(0xFF1C2220.toInt())
             }
             isClickable = true
         }
@@ -936,7 +936,7 @@ class RecorderService : AccessibilityService() {
             setPadding(dp(6f), dp(8f), dp(6f), dp(6f))
             background = GradientDrawable().apply {
                 cornerRadius = dp(18f).toFloat()
-                setColor(0xF21C2220.toInt())
+                setColor(0xFF1C2220.toInt())
                 setStroke(dp(1f), 0x33FFFFFF)
             }
         }
