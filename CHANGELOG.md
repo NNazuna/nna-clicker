@@ -3,6 +3,16 @@
 All notable changes to NNA Clicker are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- Saved setups list redesigned: each setup shows its tap count, timing, and quick Open, Rename, and Delete buttons. Long lists scroll, and a **New setup** button starts a fresh one.
+
+### Fixed
+- Quick auto tap and multi-target runs no longer add a new recording every time Start is pressed. Each reuses one recording that is overwritten on the next run.
+- Saved setups can now be renamed and deleted (with a confirmation step).
+- New setup names no longer repeat after a setup is deleted.
+
 ## [2.3.0] - 2026-11-22
 
 ### Added
