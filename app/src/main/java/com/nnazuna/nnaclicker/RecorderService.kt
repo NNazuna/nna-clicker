@@ -46,20 +46,23 @@ class RecorderService : AccessibilityService() {
 
     enum class State { IDLE, RECORDING, PLAYING }
 
-    private val COLOR_REC = 0xFFF2545F.toInt()
-    private val COLOR_PLAY = 0xFF5FD3BC.toInt()
-    private val QUICK_TAP_ID = "auto-tap-quick"
-    private val MULTI_TAP_ID = "auto-tap-multi"
+    private val COLOR_REC = OverlayPalette.REC
+    private val COLOR_PLAY = OverlayPalette.PLAY
+
+    internal val quickTap = QuickTapPicker(this)
+    internal val multiTap = MultiTargetPicker(this)
+    internal val setupList = SetupListOverlay(this)
+    private val runPill = RunPill(this)
 
     var state = State.IDLE
         private set
 
-    private lateinit var wm: WindowManager
-    private lateinit var storage: Storage
-    private val handler = Handler(Looper.getMainLooper())
+    internal lateinit var wm: WindowManager
+    internal lateinit var storage: Storage
+    internal val handler = Handler(Looper.getMainLooper())
 
     // Panel mengambang
-    private var panel: LinearLayout? = null
+    internal var panel: LinearLayout? = null
     private var panelParams: WindowManager.LayoutParams? = null
     private lateinit var btnRecord: ImageView
     private lateinit var btnPlay: ImageView
@@ -76,18 +79,6 @@ class RecorderService : AccessibilityService() {
     private var minimized = false
     /** Recording list opened from the panel. */
     private var menuView: View? = null
-    /** Full-screen one-tap picker for the quick auto tap flow. */
-    private var picker: View? = null
-    /** Full-screen multi-target picker. */
-    private var multiPicker: FrameLayout? = null
-    private val multiTargets = mutableListOf<MultiTarget>()
-    /** Non-touchable numbered markers kept visible while multi-target playback runs. */
-    private var multiGhost: View? = null
-    /** Saved setup list opened from the panel. */
-    private var setupList: View? = null
-
-    private class MultiTarget(var x: Float, var y: Float, var delayMs: Long, val view: View)
-    /** Lapisan gelap saat memutar (tidak menangkap sentuhan) + menjaga layar tetap menyala. */
     private var dimView: View? = null
     private var playStartedAt = 0L
     /** Playback position shown on the panel. */
@@ -160,12 +151,12 @@ class RecorderService : AccessibilityService() {
 
     /** Volume Bawah = berhenti merekam / memutar, tanpa perlu menyentuh layar. */
     override fun onKeyEvent(event: KeyEvent): Boolean {
-        if (multiPicker != null && event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
-            if (event.action == KeyEvent.ACTION_DOWN) removeMultiPicker(restorePanel = true)
+        if (multiTap.isOpen && event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            if (event.action == KeyEvent.ACTION_DOWN) multiTap.removeMultiPicker(restorePanel = true)
             return true
         }
-        if (picker != null && event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
-            if (event.action == KeyEvent.ACTION_DOWN) removePicker(restorePanel = true)
+        if (quickTap.isOpen && event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            if (event.action == KeyEvent.ACTION_DOWN) quickTap.removePicker(restorePanel = true)
             return true
         }
         if (event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN && state != State.IDLE) {
@@ -188,10 +179,11 @@ class RecorderService : AccessibilityService() {
     private fun cleanup() {
         if (instance == null) return
         stopAll()
-        removePicker(restorePanel = false)
-        removeMultiPicker(restorePanel = false)
-        closeSetupList()
-        removeMultiGhost()
+        quickTap.removePicker(restorePanel = false)
+        multiTap.removeMultiPicker(restorePanel = false)
+        setupList.closeSetupList()
+        multiTap.removeMultiGhost()
+        runPill.removeRunPill()
         removeCapture()
         hidePanel()
         instance = null
@@ -200,10 +192,10 @@ class RecorderService : AccessibilityService() {
 
     // ---------- util ----------
 
-    private fun dp(v: Float): Int =
+    internal fun dp(v: Float): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics).toInt()
 
-    private fun overlayParams(w: Int, h: Int, flags: Int) = WindowManager.LayoutParams(
+    internal fun overlayParams(w: Int, h: Int, flags: Int) = WindowManager.LayoutParams(
         w, h,
         WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
         flags,
@@ -215,7 +207,7 @@ class RecorderService : AccessibilityService() {
         }
     }
 
-    private fun screenSize(): Point {
+    internal fun screenSize(): Point {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val b = wm.maximumWindowMetrics.bounds
             Point(b.width(), b.height())
@@ -232,7 +224,7 @@ class RecorderService : AccessibilityService() {
         return dm.getDisplay(Display.DEFAULT_DISPLAY)?.rotation ?: 0
     }
 
-    private fun toast(msg: String) = LToast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    internal fun toast(msg: String) = LToast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
     private fun useShizukuNow(): Boolean = storage.useShizuku && ShizukuBridge.isConnected
 
@@ -241,10 +233,10 @@ class RecorderService : AccessibilityService() {
     val isPanelShown: Boolean get() = panel != null
 
     /** Entry point from the main screen: place numbered targets over any app. */
-    fun startMultiTarget() = startMultiTap()
+    fun startMultiTarget() = multiTap.startMultiTap()
 
     /** Entry point from the main screen: open the saved setup list. */
-    fun showSavedSetups() = showSetupList()
+    fun showSavedSetups() = setupList.showSetupList()
 
     @SuppressLint("ClickableViewAccessibility")
     fun showPanel() {
@@ -484,755 +476,9 @@ class RecorderService : AccessibilityService() {
         if (menuView != null) closeMenu() else openMenu()
     }
 
-    private fun closeMenu() {
+    internal fun closeMenu() {
         menuView?.let { runCatching { wm.removeView(it) } }
         menuView = null
-    }
-
-    // ---------- saved multi-target setups ----------
-
-    private fun closeSetupList() {
-        setupList?.let { runCatching { wm.removeView(it) } }
-        setupList = null
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun showSetupList() {
-        if (storage.setups().isEmpty()) {
-            toast("No saved setups yet. Press Start once to save one.")
-            return
-        }
-        closeSetupList()
-        val size = screenSize()
-        val w = minOf(dp(340f), size.x - dp(24f))
-        val ink = 0xFFF1F4F2.toInt()
-        val muted = 0x99FFFFFF.toInt()
-        val surface = 0xFF1C2220.toInt()
-        val raised = 0xFF252D2A.toInt()
-
-        val params = overlayParams(
-            w, WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-        ).apply {
-            x = (size.x - w) / 2
-            y = dp(96f)
-            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
-        }
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12f), dp(12f), dp(12f), dp(10f))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(14f).toFloat()
-                setColor(surface)
-                setStroke(dp(1f), 0x33FFFFFF)
-            }
-            elevation = dp(8f).toFloat()
-        }
-        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = android.widget.ScrollView(this).apply {
-            isVerticalScrollBarEnabled = false
-            addView(list)
-        }
-
-        fun ripple(color: Int, radius: Float) = RippleDrawable(
-            android.content.res.ColorStateList.valueOf(0x33FFFFFF),
-            GradientDrawable().apply { cornerRadius = dp(radius).toFloat(); setColor(color) },
-            null,
-        )
-        fun text(s: String, sp: Float, color: Int, weight: Int) = TextView(this).apply {
-            text = s
-            setTextColor(color)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
-            typeface = Ui.font(this@RecorderService, weight)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }
-        fun iconButton(icon: Icon, desc: String, tint: Int, bg: Int, onClick: () -> Unit) = ImageView(this).apply {
-            setImageDrawable(IconDrawable(icon, tint, dp(18f)))
-            scaleType = ImageView.ScaleType.CENTER
-            contentDescription = desc
-            background = ripple(bg, 20f)
-            setOnClickListener { onClick() }
-        }
-        fun pill(label: String, fg: Int, bg: Int, onClick: () -> Unit) = TextView(this).apply {
-            text = label
-            gravity = Gravity.CENTER
-            setTextColor(fg)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            typeface = Ui.font(this@RecorderService, 2)
-            setPadding(dp(14f), 0, dp(14f), 0)
-            background = ripple(bg, 18f)
-            setOnClickListener { onClick() }
-        }
-        fun setFocusable(on: Boolean) {
-            params.flags = if (on) {
-                params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-            } else {
-                params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-            }
-            if (setupList === box) runCatching { wm.updateViewLayout(box, params) }
-        }
-
-        lateinit var render: () -> Unit
-        var editingId: String? = null
-        var confirmId: String? = null
-
-        render = render@{
-            list.removeAllViews()
-            val setups = storage.setups()
-            if (setups.isEmpty()) {
-                closeSetupList()
-                toast("All setups deleted")
-                return@render
-            }
-            setups.forEachIndexed { index, s ->
-                val card = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(10f), dp(10f), dp(8f), dp(10f))
-                }
-                val danger = confirmId == s.id
-                card.background = ripple(if (danger) 0xFF3A2226.toInt() else raised, 10f)
-
-                // Badge: target count, the thing people recognise a setup by.
-                val badge = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = Gravity.CENTER
-                    background = GradientDrawable().apply {
-                        cornerRadius = dp(10f).toFloat()
-                        setColor(if (danger) COLOR_REC else COLOR_PLAY)
-                    }
-                    addView(text("${s.points.size}", 17f, 0xFF0E1412.toInt(), 3).apply { gravity = Gravity.CENTER })
-                    addView(text(if (s.points.size == 1) "TAP" else "TAPS", 8f, 0xB30E1412.toInt(), 2).apply {
-                        gravity = Gravity.CENTER
-                        letterSpacing = 0.1f
-                    })
-                }
-                card.addView(badge, LinearLayout.LayoutParams(dp(44f), dp(44f)).apply { rightMargin = dp(12f) })
-
-                val info = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-                when {
-                    editingId == s.id -> {
-                        val input = android.widget.EditText(this).apply {
-                            setText(s.name)
-                            setSelection(s.name.length)
-                            setSingleLine()
-                            setTextColor(ink)
-                            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                            typeface = Ui.font(this@RecorderService, 2)
-                            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
-                            setPadding(dp(8f), dp(6f), dp(8f), dp(6f))
-                            background = GradientDrawable().apply {
-                                cornerRadius = dp(6f).toFloat()
-                                setColor(surface)
-                                setStroke(dp(1.5f), COLOR_PLAY)
-                            }
-                        }
-                        fun commit() {
-                            val name = input.text.toString().trim().take(40)
-                            if (name.isNotEmpty() && name != s.name) {
-                                s.name = name
-                                storage.saveSetup(s)
-                            }
-                            editingId = null
-                            setFocusable(false)
-                            render()
-                        }
-                        input.setOnEditorActionListener { _, _, _ -> commit(); true }
-                        info.addView(input, LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
-                        ))
-                        card.addView(info, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                        card.addView(iconButton(Icon.CHECK, "Save name", 0xFF0E1412.toInt(), COLOR_PLAY) { commit() },
-                            LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(8f) })
-                        input.post {
-                            input.requestFocus()
-                            (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
-                                .showSoftInput(input, 0)
-                        }
-                    }
-                    danger -> {
-                        info.addView(text("Delete \"${s.name}\"?", 14f, ink, 2))
-                        info.addView(text("This can't be undone", 12f, 0xFFF2A0A6.toInt(), 0))
-                        card.addView(info, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                        card.addView(pill("Keep", ink, 0x22FFFFFF) { confirmId = null; render() },
-                            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(36f)).apply { rightMargin = dp(6f) })
-                        card.addView(pill("Delete", 0xFFFFFFFF.toInt(), COLOR_REC) {
-                            storage.deleteSetup(s.id)
-                            confirmId = null
-                            render()
-                        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(36f)))
-                    }
-                    else -> {
-                        info.addView(text(s.name, 15f, ink, 2))
-                        info.addView(text("Every ${FlowUi.sec(s.everyMs)} · hold ${s.holdMs} ms", 12f, muted, 0)
-                            .apply { setPadding(0, dp(2f), 0, 0) })
-                        card.addView(info, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                        card.addView(iconButton(Icon.EDIT, "Rename ${s.name}", muted, 0x00000000) {
-                            editingId = s.id; confirmId = null
-                            setFocusable(true)
-                            render()
-                        }, LinearLayout.LayoutParams(dp(36f), dp(36f)))
-                        card.addView(iconButton(Icon.TRASH, "Delete ${s.name}", muted, 0x00000000) {
-                            confirmId = s.id; editingId = null
-                            setFocusable(false)
-                            render()
-                        }, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { rightMargin = dp(4f) })
-                        card.addView(iconButton(Icon.PLAY, "Open ${s.name}", 0xFF0E1412.toInt(), COLOR_PLAY) {
-                            closeSetupList()
-                            startMultiTap(s)
-                        }, LinearLayout.LayoutParams(dp(40f), dp(40f)))
-                        card.setOnClickListener { closeSetupList(); startMultiTap(s) }
-                    }
-                }
-                list.addView(card, LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { if (index > 0) topMargin = dp(8f) })
-            }
-        }
-
-        // Header
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4f), 0, 0, dp(10f))
-        }
-        val titles = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        titles.addView(text("SAVED SETUPS", 18f, ink, 3).apply { letterSpacing = 0.04f })
-        titles.addView(text("Tap to open · edit or delete with the icons", 12f, muted, 0))
-        header.addView(titles, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        header.addView(iconButton(Icon.CLOSE, "Close", ink, 0x22FFFFFF) { closeSetupList() },
-            LinearLayout.LayoutParams(dp(36f), dp(36f)))
-        box.addView(header)
-        box.addView(scroll, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
-        ))
-        // New setup shortcut
-        box.addView(pill("+  New setup", COLOR_PLAY, 0x1F5FD3BC) { closeSetupList(); startMultiTap() },
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42f)).apply { topMargin = dp(10f) })
-
-        render()
-        // Keep the card within the screen; long lists scroll.
-        scroll.layoutParams.height = LinearLayout.LayoutParams.WRAP_CONTENT
-        list.measure(
-            View.MeasureSpec.makeMeasureSpec(w - dp(24f), View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-        )
-        val maxList = size.y - dp(96f) - dp(200f)
-        if (list.measuredHeight > maxList) scroll.layoutParams.height = maxList
-
-        box.setOnTouchListener { _, e ->
-            if (e.actionMasked == MotionEvent.ACTION_OUTSIDE && editingId == null) { closeSetupList(); true } else false
-        }
-        setupList = box
-        wm.addView(box, params)
-    }
-
-    // ---------- quick auto tap ----------
-
-    /** One tap in the target app, then repeat it until stopped. */
-    private fun startQuickTap() {
-        if (state != State.IDLE) {
-            toast("Stop recording or playback first")
-            return
-        }
-        if (picker != null) return
-        closeMenu()
-        panel?.visibility = View.INVISIBLE
-
-        val frame = FrameLayout(this)
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16f), dp(12f), dp(10f), dp(12f))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(4f).toFloat()
-                setColor(0xFF1C2220.toInt())
-            }
-        }
-        card.addView(TextView(this).apply {
-            text = L.t("Tap the spot to repeat")
-            setTextColor(0xFFF1F4F2.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            typeface = Ui.font(this@RecorderService, 2)
-        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        card.addView(TextView(this).apply {
-            text = L.t("Cancel")
-            setTextColor(COLOR_PLAY)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            typeface = Ui.font(this@RecorderService, 2)
-            setPadding(dp(14f), dp(6f), dp(8f), dp(6f))
-            setOnClickListener { removePicker(restorePanel = true) }
-        })
-        card.isClickable = true
-        frame.addView(card, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-        ).apply {
-            gravity = Gravity.TOP
-            topMargin = dp(72f)
-            leftMargin = dp(16f)
-            rightMargin = dp(16f)
-        })
-        frame.setOnTouchListener { _, e ->
-            if (e.actionMasked == MotionEvent.ACTION_UP) {
-                val x = e.rawX
-                val y = e.rawY
-                removePicker(restorePanel = true)
-                beginQuickTap(x, y)
-            }
-            true
-        }
-
-        val size = screenSize()
-        picker = frame
-        wm.addView(frame, overlayParams(
-            size.x, size.y,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-        ))
-    }
-
-    private fun removePicker(restorePanel: Boolean) {
-        picker?.let { runCatching { wm.removeView(it) } }
-        picker = null
-        if (restorePanel) panel?.visibility = View.VISIBLE
-    }
-
-    private fun beginQuickTap(x: Float, y: Float) {
-        val every = storage.globalSettings().intervalMs.coerceIn(100L, 3_600_000L)
-        // One reusable recording, overwritten each run, so the list doesn't fill up.
-        val rec = Recording(QUICK_TAP_ID, "", System.currentTimeMillis(), mutableListOf())
-        val label = FlowStep(0, FlowStep.LABEL, ref = FlowStep.newId(), name = "Repeat")
-        val gesture = RecGesture(1, listOf(
-            Stroke(listOf(TouchPoint(x, y, 0), TouchPoint(x, y, 60))),
-        ))
-        val jump = FlowStep(gesture.at + gesture.duration + every, FlowStep.GOTO, ref = label.ref)
-        rec.flows.add(label)
-        rec.gestures.add(gesture)
-        rec.flows.add(jump)
-        rec.name = "Auto tap · every ${FlowUi.sec(every)}"
-        storage.save(rec)
-        playFrom(rec.id, -1, 1500)
-        toast("Auto tap starts in 1.5 s. Volume Down stops.")
-    }
-
-    // ---------- multi-target auto tap ----------
-
-    /** Place numbered targets, then tap them in order, forever. */
-    private fun startMultiTap(initial: MultiSetup? = null) {
-        if (state != State.IDLE) {
-            toast("Stop recording or playback first")
-            return
-        }
-        if (multiPicker != null) return
-        closeMenu()
-        closeSetupList()
-        panel?.visibility = View.INVISIBLE
-        multiTargets.clear()
-        var selectedTarget: MultiTarget? = null
-        var savedId: String? = initial?.id
-        var savedName: String? = initial?.name
-
-        val frame = FrameLayout(this)
-        val size = screenSize()
-        lateinit var countLabel: TextView
-        lateinit var startButton: TextView
-        lateinit var everyLabel: TextView
-        lateinit var holdLabel: TextView
-        lateinit var delayBox: LinearLayout
-        lateinit var delayLabel: TextView
-        lateinit var timingBox: LinearLayout
-        var everyMs = initial?.everyMs ?: storage.globalSettings().intervalMs.coerceIn(100L, 3_600_000L)
-        var holdMs = initial?.holdMs ?: 60L
-
-        fun refreshTiming() {
-            everyLabel.text = Ui.fmtSec(everyMs)
-            holdLabel.text = "$holdMs ms"
-        }
-
-        fun refreshMulti() {
-            val n = multiTargets.size
-            val selected = selectedTarget?.takeIf { multiTargets.contains(it) }
-            if (selected == null) {
-                selectedTarget = null
-                countLabel.text = if (n == 0) L.t("Tap a spot") else L.t("{} targets", n)
-                delayBox.visibility = View.GONE
-            } else {
-                countLabel.text = L.t("Target {}/{}", multiTargets.indexOf(selected) + 1, n)
-                timingBox.visibility = View.VISIBLE
-                delayBox.visibility = View.VISIBLE
-                delayLabel.text = "${selected.delayMs} ms"
-            }
-            startButton.isEnabled = n > 0
-            startButton.alpha = if (n > 0) 1f else 0.35f
-            multiTargets.forEachIndexed { i, t -> (t.view as TextView).text = (i + 1).toString() }
-        }
-
-        fun addTarget(x: Float, y: Float, delayMs: Long = 0L) {
-            val px = x.coerceIn(dp(20f).toFloat(), (size.x - dp(20f)).toFloat())
-            val py = y.coerceIn(dp(20f).toFloat(), (size.y - dp(20f)).toFloat())
-            val marker = TextView(this).apply {
-                text = (multiTargets.size + 1).toString()
-                gravity = Gravity.CENTER
-                setTextColor(0xFFFFFFFF.toInt())
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                typeface = Ui.font(this@RecorderService, 2)
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(COLOR_PLAY)
-                    setStroke(dp(2f), 0xFFFFFFFF.toInt())
-                }
-                elevation = dp(4f).toFloat()
-            }
-            val target = MultiTarget(px, py, delayMs, marker)
-            val lp = FrameLayout.LayoutParams(dp(38f), dp(38f)).apply {
-                leftMargin = (px - dp(19f)).toInt()
-                topMargin = (py - dp(19f)).toInt()
-            }
-            var startRawX = 0f
-            var startRawY = 0f
-            var startLeft = 0
-            var startTop = 0
-            var moved = false
-            var longPressed = false
-            val longPress = Runnable {
-                if (!moved) {
-                    longPressed = true
-                    multiTargets.remove(target)
-                    if (selectedTarget == target) selectedTarget = null
-                    frame.removeView(marker)
-                    refreshMulti()
-                    toast("Target removed")
-                }
-            }
-            marker.setOnTouchListener { _, e ->
-                when (e.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        startRawX = e.rawX; startRawY = e.rawY
-                        startLeft = lp.leftMargin; startTop = lp.topMargin
-                        moved = false
-                        longPressed = false
-                        handler.postDelayed(longPress, 500)
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        if (!moved && Math.hypot((e.rawX - startRawX).toDouble(), (e.rawY - startRawY).toDouble()) > dp(6f)) {
-                            moved = true
-                            handler.removeCallbacks(longPress)
-                        }
-                        if (moved) {
-                            lp.leftMargin = (startLeft + (e.rawX - startRawX)).toInt()
-                                .coerceIn(0, maxOf(0, size.x - dp(38f)))
-                            lp.topMargin = (startTop + (e.rawY - startRawY)).toInt()
-                                .coerceIn(0, maxOf(0, size.y - dp(38f)))
-                            marker.layoutParams = lp
-                            target.x = lp.leftMargin + dp(19f).toFloat()
-                            target.y = lp.topMargin + dp(19f).toFloat()
-                        }
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        handler.removeCallbacks(longPress)
-                        if (!moved && !longPressed) {
-                            selectedTarget = if (selectedTarget == target) null else target
-                            refreshMulti()
-                        }
-                    }
-                    MotionEvent.ACTION_CANCEL -> handler.removeCallbacks(longPress)
-                }
-                true
-            }
-            multiTargets.add(target)
-            frame.addView(marker, lp)
-            refreshMulti()
-        }
-
-        val panelW = minOf(dp(320f), size.x - dp(24f))
-        val capsule = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(6f), dp(6f), dp(6f), dp(6f))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(6f).toFloat()
-                setColor(0xFF1C2220.toInt())
-                setStroke(dp(1f), 0x33FFFFFF)
-            }
-            isClickable = true
-        }
-        val capLp = FrameLayout.LayoutParams(panelW, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
-            leftMargin = (size.x - panelW) / 2
-            topMargin = dp(120f)
-        }
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val handle = ImageView(this).apply {
-            setImageDrawable(IconDrawable(Icon.GRIP, 0x8CFFFFFF.toInt(), dp(20f)))
-            scaleType = ImageView.ScaleType.CENTER
-        }
-        row.addView(handle, LinearLayout.LayoutParams(dp(28f), dp(40f)))
-
-        countLabel = TextView(this).apply {
-            setTextColor(0xCCFFFFFF.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            typeface = Ui.font(this@RecorderService, 1)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(2f), 0, dp(4f), 0)
-        }
-        row.addView(countLabel, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-
-        fun iconButton(icon: Icon, description: String, onClick: () -> Unit): ImageView = ImageView(this).apply {
-            setImageDrawable(IconDrawable(icon, 0xFFF1F4F2.toInt(), dp(19f)))
-            scaleType = ImageView.ScaleType.CENTER
-            contentDescription = description
-            background = RippleDrawable(
-                android.content.res.ColorStateList.valueOf(0x33FFFFFF), null,
-                GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFFFFFFFF.toInt()) },
-            )
-            setOnClickListener { onClick() }
-        }
-        row.addView(iconButton(Icon.BACK, "Undo") {
-            if (multiTargets.isNotEmpty()) {
-                val t = multiTargets.removeAt(multiTargets.lastIndex)
-                frame.removeView(t.view)
-                refreshMulti()
-            }
-        }, LinearLayout.LayoutParams(dp(36f), dp(40f)))
-        row.addView(iconButton(Icon.TRASH, "Clear") {
-            multiTargets.forEach { frame.removeView(it.view) }
-            multiTargets.clear()
-            refreshMulti()
-        }, LinearLayout.LayoutParams(dp(36f), dp(40f)))
-
-        everyLabel = TextView(this).apply {
-            setTextColor(COLOR_PLAY)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            typeface = Ui.font(this@RecorderService, 2)
-            gravity = Gravity.CENTER
-            maxLines = 1
-        }
-        holdLabel = TextView(this).apply {
-            setTextColor(COLOR_PLAY)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            typeface = Ui.font(this@RecorderService, 2)
-            gravity = Gravity.CENTER
-            maxLines = 1
-        }
-
-        fun stepButton(label: String, onClick: () -> Unit) = TextView(this).apply {
-            text = label
-            gravity = Gravity.CENTER
-            minWidth = dp(30f)
-            minHeight = dp(30f)
-            setTextColor(COLOR_PLAY)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-            typeface = Ui.font(this@RecorderService, 2)
-            background = RippleDrawable(
-                android.content.res.ColorStateList.valueOf(0x33FFFFFF), null,
-                GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFFFFFFFF.toInt()) },
-            )
-            setOnClickListener { onClick() }
-        }
-        fun timingRow(label: String, value: () -> TextView, stepDown: () -> Unit, stepUp: () -> Unit): LinearLayout {
-            val r = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(2f), 0, 0)
-            }
-            r.addView(TextView(this).apply {
-                text = label
-                setTextColor(0x99FFFFFF.toInt())
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                typeface = Ui.font(this@RecorderService, 0)
-            }, LinearLayout.LayoutParams(dp(42f), LinearLayout.LayoutParams.WRAP_CONTENT))
-            r.addView(stepButton("−", stepDown))
-            r.addView(value(), LinearLayout.LayoutParams(dp(76f), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                gravity = Gravity.CENTER
-            })
-            r.addView(stepButton("+", stepUp))
-            return r
-        }
-        timingBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-            setPadding(0, dp(4f), 0, 0)
-        }
-        val everyRow = timingRow("Every", { everyLabel }, {
-            everyMs = (everyMs - 100L).coerceAtLeast(100L); refreshTiming()
-        }, {
-            everyMs = (everyMs + 100L).coerceAtMost(3_600_000L); refreshTiming()
-        })
-        val holdRow = timingRow("Hold", { holdLabel }, {
-            holdMs = (holdMs - 20L).coerceAtLeast(20L); refreshTiming()
-        }, {
-            holdMs = (holdMs + 20L).coerceAtMost(2_000L); refreshTiming()
-        })
-        timingBox.addView(everyRow)
-        timingBox.addView(holdRow)
-
-        delayBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-            setPadding(0, dp(4f), 0, 0)
-        }
-        delayLabel = TextView(this).apply {
-            setTextColor(COLOR_PLAY)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            typeface = Ui.font(this@RecorderService, 2)
-            gravity = Gravity.CENTER
-            maxLines = 1
-        }
-        delayBox.addView(timingRow("Delay", { delayLabel }, {
-            selectedTarget?.let { it.delayMs = (it.delayMs - 50L).coerceAtLeast(0L); refreshMulti() }
-        }, {
-            selectedTarget?.let { it.delayMs = (it.delayMs + 50L).coerceAtMost(10_000L); refreshMulti() }
-        }))
-        timingBox.addView(delayBox)
-        row.addView(iconButton(Icon.SETTINGS, "Timing") {
-            timingBox.visibility = if (timingBox.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-            refreshTiming()
-        }, LinearLayout.LayoutParams(dp(36f), dp(40f)))
-
-        startButton = TextView(this).apply {
-            text = L.t("Start")
-            gravity = Gravity.CENTER
-            minHeight = dp(40f)
-            setTextColor(0xFF0F1312.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            typeface = Ui.font(this@RecorderService, 2)
-            setPadding(dp(12f), 0, dp(12f), 0)
-            background = GradientDrawable().apply {
-                cornerRadius = dp(4f).toFloat()
-                setColor(COLOR_PLAY)
-            }
-            setOnClickListener {
-                if (multiTargets.isEmpty()) {
-                    toast("Add at least one target")
-                } else {
-                    val points = multiTargets.map { MultiPoint(it.x, it.y, it.delayMs) }.toMutableList()
-                    val id = savedId ?: UUID.randomUUID().toString()
-                    val name = savedName ?: storage.nextSetupName()
-                    storage.saveSetup(MultiSetup(id, name, points, everyMs, holdMs, System.currentTimeMillis()))
-                    savedId = id
-                    savedName = name
-                    removeMultiPicker(restorePanel = true)
-                    beginMultiTap(points, everyMs, holdMs, name)
-                }
-            }
-        }
-        row.addView(startButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(40f)).apply {
-            leftMargin = dp(2f)
-        })
-        row.addView(iconButton(Icon.CLOSE, "Cancel") { removeMultiPicker(restorePanel = true) },
-            LinearLayout.LayoutParams(dp(36f), dp(40f)))
-
-        var dragX = 0f
-        var dragY = 0f
-        var dragLeft = 0
-        var dragTop = 0
-        handle.setOnTouchListener { _, e ->
-            when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    dragX = e.rawX; dragY = e.rawY
-                    dragLeft = capLp.leftMargin; dragTop = capLp.topMargin
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    capLp.leftMargin = (dragLeft + (e.rawX - dragX)).toInt()
-                        .coerceIn(0, maxOf(0, size.x - panelW))
-                    val maxTop = maxOf(0, size.y - maxOf(capsule.height, dp(56f)))
-                    capLp.topMargin = (dragTop + (e.rawY - dragY)).toInt().coerceIn(0, maxTop)
-                    capsule.layoutParams = capLp
-                }
-            }
-            true
-        }
-
-        capsule.addView(row)
-        capsule.addView(timingBox)
-        frame.addView(capsule, capLp)
-        refreshTiming()
-        initial?.points?.forEach { addTarget(it.x, it.y, it.delayMs) }
-        frame.setOnTouchListener { _, e ->
-            if (e.actionMasked == MotionEvent.ACTION_UP) addTarget(e.rawX, e.rawY)
-            true
-        }
-        refreshMulti()
-        multiPicker = frame
-        wm.addView(frame, overlayParams(
-            size.x, size.y,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-        ))
-        toast("Tap to add · tap a marker for delay · hold to remove")
-    }
-
-    private fun removeMultiPicker(restorePanel: Boolean) {
-        multiPicker?.let { runCatching { wm.removeView(it) } }
-        multiPicker = null
-        multiTargets.clear()
-        if (restorePanel) panel?.visibility = View.VISIBLE
-    }
-
-    private fun showMultiGhost(points: List<MultiPoint>) {
-        removeMultiGhost()
-        if (points.isEmpty()) return
-        val frame = FrameLayout(this)
-        val size = screenSize()
-        points.forEachIndexed { i, p ->
-            val marker = TextView(this).apply {
-                text = (i + 1).toString()
-                gravity = Gravity.CENTER
-                setTextColor(COLOR_PLAY)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                typeface = Ui.font(this@RecorderService, 2)
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(0xCC1C2220.toInt())
-                    setStroke(dp(2f), COLOR_PLAY)
-                }
-            }
-            frame.addView(marker, FrameLayout.LayoutParams(dp(30f), dp(30f)).apply {
-                leftMargin = (p.x - dp(15f)).toInt().coerceIn(0, maxOf(0, size.x - dp(30f)))
-                topMargin = (p.y - dp(15f)).toInt().coerceIn(0, maxOf(0, size.y - dp(30f)))
-            })
-        }
-        multiGhost = frame
-        wm.addView(frame, overlayParams(
-            size.x, size.y,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-        ))
-        bringPanelToFront()
-    }
-
-    private fun removeMultiGhost() {
-        multiGhost?.let { runCatching { wm.removeView(it) } }
-        multiGhost = null
-    }
-
-    private fun beginMultiTap(points: List<MultiPoint>, every: Long, hold: Long, name: String? = null) {
-        // One reusable recording, overwritten each run; the setup itself lives in saved setups.
-        val rec = Recording(MULTI_TAP_ID, "", System.currentTimeMillis(), mutableListOf())
-        val label = FlowStep(0, FlowStep.LABEL, ref = FlowStep.newId(), name = "Repeat")
-        rec.flows.add(label)
-        var at = 1L
-        for (point in points) {
-            rec.gestures.add(RecGesture(at, listOf(
-                Stroke(listOf(TouchPoint(point.x, point.y, 0), TouchPoint(point.x, point.y, hold))),
-            )))
-            at += every + point.delayMs
-        }
-        rec.flows.add(FlowStep(at, FlowStep.GOTO, ref = label.ref))
-        rec.name = name ?: "Multi tap · ${points.size} targets · every ${FlowUi.sec(every)}"
-        storage.save(rec)
-        playFrom(rec.id, -1, 1500)
-        showMultiGhost(points)
-        toast("${rec.name} starts in 1.5 s. Volume Down stops.")
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -1291,9 +537,9 @@ class RecorderService : AccessibilityService() {
         ))
         box.addView(View(this).apply { setBackgroundColor(0x33FFFFFF) },
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1f)).apply { setMargins(dp(8f), dp(4f), dp(8f), dp(4f)) })
-        box.addView(row("Saved setups", COLOR_PLAY, true) { closeMenu(); showSetupList() })
-        box.addView(row("Multi tap here", COLOR_PLAY, true) { closeMenu(); startMultiTap() })
-        box.addView(row("Auto tap here", COLOR_PLAY, true) { closeMenu(); startQuickTap() })
+        box.addView(row("Saved setups", COLOR_PLAY, true) { closeMenu(); setupList.showSetupList() })
+        box.addView(row("Multi tap here", COLOR_PLAY, true) { closeMenu(); multiTap.startMultiTap() })
+        box.addView(row("Auto tap here", COLOR_PLAY, true) { closeMenu(); quickTap.startQuickTap() })
         box.addView(row("Open NNA Clicker", 0xFFF1F4F2.toInt(), false) { closeMenu(); openApp() })
         box.addView(row("Shrink panel", 0xFFF1F4F2.toInt(), false) { setMinimized(true) })
 
@@ -1502,7 +748,7 @@ class RecorderService : AccessibilityService() {
     private var stopByUser = false
 
     private fun startPlaying(fromAt: Long = -1, minDelayMs: Long = 0) {
-        removeMultiGhost()
+        multiTap.removeMultiGhost()
         val rec = storage.selected()
         if (rec == null || Program(rec).isEmpty) {
             toast("No recording selected")
@@ -1522,6 +768,7 @@ class RecorderService : AccessibilityService() {
         val loops = cfg.loops
         state = State.PLAYING
         updatePanel()
+        if (rec.id == AutoTap.QUICK_TAP_ID || rec.id == AutoTap.MULTI_TAP_ID) runPill.showRunPill(rec)
         status.text = L.t("Starting…")
         playTotal = Program(rec).steps.size
         playLoopNow = 1
@@ -1716,7 +963,8 @@ class RecorderService : AccessibilityService() {
         if (state != State.PLAYING) return
         if (!stopByUser && storage.alertDone) alert()
         hideDim()
-        removeMultiGhost()
+        multiTap.removeMultiGhost()
+        runPill.removeRunPill()
         handler.removeCallbacks(ticker)
         handler.removeCallbacks(limitStop)
         player = null
@@ -1759,7 +1007,7 @@ class RecorderService : AccessibilityService() {
 
     /** Dipanggil dari tombol volume dan MainActivity. */
     fun stopAll() {
-        removeMultiGhost()
+        multiTap.removeMultiGhost()
         when (state) {
             State.RECORDING -> stopRecording()
             State.PLAYING -> stopPlaying()

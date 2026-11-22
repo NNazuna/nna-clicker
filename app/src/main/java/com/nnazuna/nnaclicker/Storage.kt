@@ -56,11 +56,7 @@ class Storage(context: Context) {
         File(multiDir, "${s.id}.json").writeText(s.toJson().toString())
     }
 
-    /** "Setup N" with N one past the highest number in use, so names never repeat after a delete. */
-    fun nextSetupName(): String {
-        val used = setups().mapNotNull { Regex("""^Setup (\d+)$""").find(it.name)?.groupValues?.get(1)?.toIntOrNull() }
-        return "Setup ${(used.maxOrNull() ?: 0) + 1}"
-    }
+    fun nextSetupName(): String = AutoTap.nextSetupName(setups().map { it.name })
 
     fun deleteSetup(id: String) {
         File(multiDir, "$id.json").delete()

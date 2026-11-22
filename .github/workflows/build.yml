@@ -35,12 +35,23 @@ jobs:
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle assembleDebug --no-daemon --stacktrace
+        # Signed release build when the signing secrets are available; forks fall back to debug.
+        run: |
+          if [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
+            gradle assembleRelease --no-daemon --stacktrace
+            echo "APK=app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_ENV"
+          else
+            if [ "${{ github.event.inputs.publish_release }}" = "true" ]; then
+              echo "::error::Signing secrets are missing; refusing to publish a debug build."; exit 1
+            fi
+            gradle assembleDebug --no-daemon --stacktrace
+            echo "APK=app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_ENV"
+          fi
 
       - name: Prepare release
         id: meta
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk NNA-Clicker.apk
+          cp "$APK" NNA-Clicker.apk
           version=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts)
           echo "version=$version" >> "$GITHUB_OUTPUT"
           # Release notes: the CHANGELOG.md section for this version
@@ -61,7 +72,8 @@ jobs:
           name: NNA-Clicker-${{ steps.meta.outputs.version }}
           path: NNA-Clicker.apk
 
-      # Remove stale releases: tags that are not vX.Y.Z, or versions newer than the one being built
+      # Remove stale releases: only vX.Y.Z versions newer than the one being built.
+      # Tags in any other format are left alone.
       - name: Remove stale releases
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true' && github.ref == 'refs/heads/main'
         env:
@@ -72,7 +84,7 @@ jobs:
           for t in $(gh release list -R "$REPO" --limit 100 --json tagName --jq '.[].tagName'); do
             v="${t#v}"
             if ! echo "$t" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-              stale=1
+              stale=0
             elif [ "$v" != "$CURRENT" ] && [ "$(printf '%s\n%s\n' "$CURRENT" "$v" | sort -V | tail -1)" = "$v" ]; then
               stale=1
             else
