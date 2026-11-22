@@ -32,25 +32,43 @@ class SetupActivity : Activity() {
         Ui.styleWindow(this, p)
         ShizukuBridge.init(this)
 
+        val headerBg = if (p.dark) p.surface else p.ink
+        val headerInk = if (p.dark) p.ink else p.bg
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(headerBg)
+            setPadding(k.dp(16f), k.dp(26f), k.dp(16f), k.dp(18f))
+        }
+        header.addView(k.text("Setup", 34f, 3, headerInk))
+        header.addView(k.text("Four steps to set up NNA Clicker.", 14f, 0, headerInk).apply {
+            alpha = 0.75f
+            setPadding(0, k.dp(4f), 0, 0)
+        })
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(k.dp(16f), k.dp(28f), k.dp(16f), k.dp(40f))
+            setPadding(k.dp(16f), k.dp(12f), k.dp(16f), k.dp(40f))
         }
-        root.addView(k.text("Setup", 32f, 2).apply { setPadding(k.dp(4f), 0, 0, k.dp(6f)) })
-        root.addView(k.text("A few switches so NNA Clicker can tap for you.", 15f, 0, p.muted).apply {
-            setPadding(k.dp(4f), 0, 0, k.dp(10f))
-        })
-        list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        list = k.group()
         root.addView(list)
-        root.addView(k.pillButton("Done", p.play) {
+        root.addView(k.pillButton("Done", p.ink) {
             storage.setupSeen = true
             finish()
         })
 
-        setContentView(ScrollView(this).apply {
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setBackgroundColor(p.bg)
+        }
+        outer.addView(header)
+        outer.addView(ScrollView(this).apply {
+            setBackgroundColor(p.bg)
+            isVerticalScrollBarEnabled = false
             addView(root)
-        })
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
+        ))
+        setContentView(outer)
     }
 
     override fun onResume() {
@@ -74,11 +92,18 @@ class SetupActivity : Activity() {
 
     private fun render() {
         list.removeAllViews()
+        var first = true
+        fun addStep(view: View) {
+            if (!first) list.addView(k.divider(40f))
+            list.addView(view)
+            first = false
+        }
+
         val a11y = RecorderService.instance != null
         var n = 1
 
         if (Build.VERSION.SDK_INT >= 33) {
-            list.addView(card(
+            addStep(card(
                 n++, "Allow restricted settings",
                 "App info › ⋮ (top right) › Allow restricted settings. Needed once, before the next step.",
                 done = a11y, optional = false, action = if (a11y) null else "Open app info",
@@ -87,9 +112,9 @@ class SetupActivity : Activity() {
             })
         }
 
-        list.addView(card(
+        addStep(card(
             n++, "Turn on NNA Clicker",
-            "Accessibility › Installed apps › NNA Clicker › On.",
+            "Accessibility › Installed apps › NNA Clicker › On",
             done = a11y, optional = false, action = if (a11y) null else "Open accessibility",
         ) {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -101,12 +126,12 @@ class SetupActivity : Activity() {
         val connected = storage.useShizuku && ShizukuBridge.isConnected
         val (shzText, shzAction) = when {
             connected -> Pair("Connected. Recording has no delay.", null)
-            !installed -> Pair("Optional. Zero-delay recording and faster image steps.", "Get Shizuku")
+            !installed -> Pair("Zero-delay recording and faster image steps.", "Get Shizuku")
             !running -> Pair("Installed but not running. Open it and press Start.", "Open Shizuku")
             !perm -> Pair("Running. Allow NNA Clicker to use it.", "Allow")
             else -> Pair("Ready to connect.", "Connect")
         }
-        list.addView(card(n++, "Shizuku", shzText, done = connected, optional = true, action = shzAction) {
+        addStep(card(n++, "Shizuku", shzText, done = connected, optional = true, action = shzAction) {
             when {
                 !installed -> startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/")))
                 !running -> packageManager.getLaunchIntentForPackage(SHIZUKU_PKG)?.let { startActivity(it) }
@@ -120,7 +145,7 @@ class SetupActivity : Activity() {
         })
 
         val panelShown = RecorderService.instance?.isPanelShown == true
-        list.addView(card(
+        addStep(card(
             n, "Show the panel",
             "Record with the red button, play with the triangle. Volume Down stops.",
             done = panelShown, optional = false, action = if (!a11y) null else if (panelShown) null else "Show panel",
@@ -134,34 +159,33 @@ class SetupActivity : Activity() {
         number: Int, title: String, body: String, done: Boolean, optional: Boolean,
         action: String?, onAction: () -> Unit,
     ): View {
-        val card = LinearLayout(this).apply {
+        val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            background = k.rounded(p.surface, 16f)
-            setPadding(k.dp(14f), k.dp(14f), k.dp(14f), k.dp(12f))
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                .apply { topMargin = k.dp(10f) }
+            setPadding(k.dp(4f), k.dp(16f), k.dp(4f), k.dp(16f))
         }
-        val badge: TextView = k.text(if (done) "✓" else "$number", 15f, 2, if (done) (if (p.dark) 0xFF0F1312.toInt() else 0xFFFFFFFF.toInt()) else p.ink).apply {
-            gravity = Gravity.CENTER
-            background = k.rounded(if (done) p.play else p.bg, 16f)
-        }
-        card.addView(badge, LinearLayout.LayoutParams(k.dp(32f), k.dp(32f)).apply { rightMargin = k.dp(14f) })
+        val mark: TextView = k.text(
+            if (done) "✓" else number.toString().padStart(2, '0'),
+            21f, 3, if (done) p.play else p.muted,
+        ).apply { gravity = Gravity.CENTER }
+        row.addView(mark, LinearLayout.LayoutParams(k.dp(44f), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            rightMargin = k.dp(10f)
+        })
 
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        head.addView(k.text(title, 17f, 2))
-        if (optional) head.addView(k.text("Optional", 12.5f, 1, p.muted).apply {
-            setPadding(k.dp(8f), k.dp(2f), k.dp(8f), k.dp(2f))
-            background = k.rounded(p.bg, 10f)
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = k.dp(8f) })
+        head.addView(k.text(title, 16f, 2))
+        if (optional) head.addView(k.text("OPTIONAL", 10f, 2, p.muted).apply {
+            letterSpacing = 0.08f
+            setPadding(k.dp(8f), 0, 0, 0)
+        })
         col.addView(head)
-        col.addView(k.text(body, 14f, 0, p.muted).apply { setPadding(0, k.dp(4f), 0, 0) })
+        col.addView(k.text(body, 13.5f, 0, p.muted).apply { setPadding(0, k.dp(3f), 0, 0) })
         if (action != null) {
-            col.addView(k.textButton(action, p.play) { onAction() }.apply {
-                setPadding(0, k.dp(10f), k.dp(12f), k.dp(4f))
+            col.addView(k.textButton("$action →", p.play) { onAction() }.apply {
+                setPadding(0, k.dp(10f), k.dp(12f), 0)
             })
         }
-        card.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        return card
+        row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        return row
     }
 }

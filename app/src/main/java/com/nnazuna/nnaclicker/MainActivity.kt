@@ -335,7 +335,7 @@ class MainActivity : Activity() {
         gravity = Gravity.CENTER
         minWidth = k.dp(44f)
         minHeight = k.dp(44f)
-        background = k.ripple(k.rounded(p.bg, 22f), k.dp(22f).toFloat())
+        background = k.ripple(k.rounded(p.bg, 22f, p.line), k.dp(22f).toFloat())
         setOnClickListener { onClick() }
     }
 
