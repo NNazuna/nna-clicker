@@ -360,7 +360,7 @@ class RecorderService : AccessibilityService() {
     }
 
     /** Panel harus selalu di atas lapisan perekam supaya tombolnya bisa ditekan. */
-    private fun bringPanelToFront() {
+    internal fun bringPanelToFront() {
         val p = panel ?: return
         val params = panelParams ?: return
         runCatching { wm.removeView(p) }
