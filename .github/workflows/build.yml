@@ -9,6 +9,11 @@ on:
         required: false
         default: false
         type: boolean
+      prerelease:
+        description: "Publish a test pre-release of this branch (not marked latest)"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -41,7 +46,7 @@ jobs:
             gradle assembleRelease --no-daemon --stacktrace
             echo "APK=app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_ENV"
           else
-            if [ "${{ github.event.inputs.publish_release }}" = "true" ]; then
+            if [ "${{ github.event.inputs.publish_release }}" = "true" ] || [ "${{ github.event.inputs.prerelease }}" = "true" ]; then
               echo "::error::Signing secrets are missing; refusing to publish a debug build."; exit 1
             fi
             gradle assembleDebug --no-daemon --stacktrace
@@ -109,3 +114,18 @@ jobs:
           body_path: release-notes.md
           files: NNA-Clicker.apk
           make_latest: true
+
+      - name: Publish pre-release
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.prerelease == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.meta.outputs.version }}-pre.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: NNA Clicker v${{ steps.meta.outputs.version }} test build ${{ github.run_number }}
+          body: |
+            Test build from `${{ github.ref_name }}` (${{ github.sha }}). Not a stable release.
+
+            **Install:** open this page on your phone, tap `NNA-Clicker.apk`, then Update. Requires Android 7.0 or later.
+          files: NNA-Clicker.apk
+          prerelease: true
+          make_latest: false
