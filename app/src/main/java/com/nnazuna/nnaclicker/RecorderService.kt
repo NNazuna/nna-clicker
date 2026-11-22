@@ -940,7 +940,7 @@ class RecorderService : AccessibilityService() {
                 if (multiTargets.isEmpty()) {
                     toast("Add at least one target")
                 } else {
-                    val points = multiTargets.map { MultiPoint(it.x, it.y, it.delayMs) }
+                    val points = multiTargets.map { MultiPoint(it.x, it.y, it.delayMs) }.toMutableList()
                     val id = savedId ?: UUID.randomUUID().toString()
                     val name = savedName ?: "Setup ${storage.setups().size + 1}"
                     storage.saveSetup(MultiSetup(id, name, points, everyMs, holdMs, System.currentTimeMillis()))
