@@ -31,3 +31,6 @@ proguard-rules.pro
 
 # Kotlin
 *.kt.bak
+
+# Local assistant notes
+CLAUDE.md
